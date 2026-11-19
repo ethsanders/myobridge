@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Trained models / recordings
+*.npz
+
+# Firmware secrets: copy config.example.h -> config.h and fill in your WiFi
+firmware/esp32_emg_streamer/config.h
+firmware/**/build/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
