@@ -128,8 +128,7 @@ myobridge calibrate --seconds 5 --out model.npz        # add --sim to use the si
 myobridge forward --model model.npz --to 127.0.0.1:5006 --verbose
 ```
 
-Outside North America add `--mains 50` before the subcommand, for example
-`myobridge --mains 50 listen`.
+Outside North America add `--mains 50`, for example `myobridge listen --mains 50`.
 
 ## Hardware
 
