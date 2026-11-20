@@ -43,3 +43,12 @@ def test_packet_loss_injection_is_detected():
         tracker.accept(decode_packet(next(stream)).seq)
     assert tracker.stats.received == 500
     assert 20 < tracker.stats.dropped < 90  # ~10% of ~555 slots
+
+
+@pytest.mark.parametrize("fs", [250, 500, 2000])
+def test_runs_at_slow_and_fast_rates(fs):
+    sim = EmgSimulator(fs=fs, seed=1)
+    sim.set_gesture("fist")
+    x = sim.record("fist", 0.5)
+    assert x.shape == (fs // 2, 4)
+    assert np.isfinite(x).all()

@@ -1,5 +1,9 @@
+import itertools
+
 import numpy as np
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from myobridge.features import (
     StreamingWindower,
@@ -48,7 +52,8 @@ def test_multichannel_shapes():
     w = np.random.default_rng(0).normal(size=(200, 4))
     for f in (mav, rms, waveform_length, zero_crossings, slope_sign_changes):
         assert f(w).shape == (4,)
-    assert extract_features(w).shape == (20,)
+    assert extract_features(w, feature_set="td").shape == (20,)
+    assert extract_features(w).shape == (60,)  # default: 15 features per channel
 
 
 def test_sliding_windows():
@@ -68,3 +73,21 @@ def test_streaming_windower_matches_offline(block):
     assert len(online) == len(offline)
     for a, b in zip(online, offline, strict=True):
         np.testing.assert_array_equal(a, b)
+
+
+@given(
+    size=st.integers(1, 40),
+    step=st.integers(1, 15),
+    cuts=st.lists(st.integers(0, 120), max_size=8),
+)
+@settings(max_examples=200, deadline=None)
+def test_streaming_windows_match_offline_windows_however_the_stream_is_cut(size, step, cuts):
+    x = np.arange(240, dtype=np.float64).reshape(120, 2)
+    edges = [0, *sorted(cuts), 120]
+    sw = StreamingWindower(size, step, 2)
+    got = [w for a, b in itertools.pairwise(edges) for w in sw.push(x[a:b])]
+    # offline: a window ends on every step-th sample, once `size` samples exist
+    want = [x[end - size : end] for end in range(step, 121, step) if end >= size]
+    assert len(got) == len(want)
+    for g, w in zip(got, want, strict=True):
+        np.testing.assert_array_equal(g, w)

@@ -2,7 +2,7 @@
 
 Why: the MyoWare's RAW output only rolls off gently above ~500 Hz, so at a
 1 kHz sample rate a lot of wideband noise folds back into the EMG band
-(docs/ALIASING.md). Sampling at 2 kHz pushes the fold-over point to 1 kHz;
+(docs/aliasing.md). Sampling at 2 kHz pushes the fold-over point to 1 kHz;
 a digital low-pass then removes 500-1000 Hz before we drop to 1 kHz, so the
 PC still receives 1 kHz data and nothing else changes.
 
@@ -94,6 +94,7 @@ class HalfbandDecimator:
         self.history = np.zeros((len(taps), n_channels), dtype=np.int64)  # [0] = newest
 
     def push(self, first: ArrayLike, second: ArrayLike) -> NDArray[np.int16]:
+        """Take two new input frames and return one output frame, as the firmware does."""
         for sample in (first, second):
             self.history = np.roll(self.history, 1, axis=0)
             self.history[0] = np.asarray(sample, dtype=np.int64)

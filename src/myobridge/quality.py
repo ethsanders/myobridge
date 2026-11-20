@@ -16,7 +16,7 @@ on the *raw* signal (before the notch and bandpass hide the problem):
     motion         cable tug, electrode sliding           share of power below 10 Hz
 
 Thresholds are deliberately simple numbers in a dataclass so they are easy
-to explain and to tune; docs/SIGNAL_QUALITY.md says how they were picked and
+to explain and to tune; docs/signal-quality.md says how they were picked and
 how well the checks work on real recordings with injected faults.
 """
 
@@ -33,6 +33,8 @@ FloatArray = NDArray[np.float64]
 
 
 class Issue(str, Enum):
+    """A problem `assess` can find on a channel. The value is the name used in JSON."""
+
     FLATLINE = "flatline"
     CLIPPING = "clipping"
     LINE_NOISE = "line_noise"
@@ -41,13 +43,19 @@ class Issue(str, Enum):
 
 @dataclass(frozen=True)
 class QualityConfig:
+    """Thresholds for the four checks. Only `fs` is required.
+
+    Give `clip_low`/`clip_high` (the ADC rails, in the same units as the
+    signal) to check for clipping; without them that check is skipped.
+    """
+
     fs: float
     mains_hz: float = 60.0
     window_s: float = 1.0  # how much history each check looks at
     # The three thresholds below are rounded from `myobridge bench quality`,
     # which sets each one for ~1% false alarms on clean 3DC validation people
     # (results/quality.json; test_docs checks they still agree). Recheck them
-    # on new hardware: docs/HARDWARE_BRINGUP.md.
+    # on new hardware: docs/hardware-bringup.md.
     flatline_ratio: float = 0.65  # flag if band RMS < this x the rest level
     clip_low: float | None = None  # ADC rails in signal units (None = don't check)
     clip_high: float | None = None
@@ -65,6 +73,8 @@ class QualityConfig:
 
 @dataclass(frozen=True)
 class ChannelReport:
+    """The measurements behind one channel's verdict, and the issues found."""
+
     channel: int
     band_rms: float  # RMS of the 20-450 Hz component
     clip_fraction: float
@@ -74,26 +84,31 @@ class ChannelReport:
 
     @property
     def ok(self) -> bool:
+        """True when no check fired."""
         return not self.issues
 
 
 # Faults the decoder should stop trusting a channel for. Hum and slow motion
 # are reported too, but the notch and the 20 Hz high-pass already remove most
 # of them before feature extraction, so dropping the channel costs more than
-# it saves (docs/SIGNAL_QUALITY.md has the numbers for both policies).
+# it saves (docs/signal-quality.md has the numbers for both policies).
 DROP_CHANNEL_ON = frozenset({Issue.FLATLINE, Issue.CLIPPING})
 
 
 @dataclass(frozen=True)
 class QualityReport:
+    """One `ChannelReport` per channel, from a single call to `assess`."""
+
     channels: tuple[ChannelReport, ...]
 
     @property
     def ok(self) -> bool:
+        """True when every channel is healthy."""
         return all(c.ok for c in self.channels)
 
     @property
     def bad_channels(self) -> list[int]:
+        """Indices of the channels with at least one issue."""
         return [c.channel for c in self.channels if not c.ok]
 
 
@@ -188,7 +203,11 @@ def rest_floor(rest: ArrayLike, cfg: QualityConfig) -> FloatArray:
 
 @dataclass
 class QualityMonitor:
-    """Streaming wrapper: push raw blocks, get a report every `hop_s` seconds."""
+    """Streaming wrapper: push raw blocks, get a report every `hop_s` seconds.
+
+    `rest_floor` is each channel's band RMS at rest (see `rest_floor`); the
+    flatline check needs it, and is skipped without it.
+    """
 
     cfg: QualityConfig
     n_channels: int
@@ -202,9 +221,11 @@ class QualityMonitor:
 
     @property
     def window_samples(self) -> int:
+        """How many samples each report looks back over."""
         return int(round(self.cfg.window_s * self.cfg.fs))
 
     def push(self, block: ArrayLike) -> QualityReport | None:
+        """Add raw samples, shape (n, n_channels); returns a report when one is due."""
         b = np.asarray(block, dtype=np.float64)
         self._buffer = np.vstack([self._buffer, b])[-self.window_samples :]
         self._since += len(b)

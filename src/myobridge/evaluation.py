@@ -9,7 +9,7 @@ That is guaranteed structurally, not by hope:
 - Feature thresholds (zero crossings, slope sign changes) are estimated from
   the training part only (`fit_thresholds`).
 - Hyperparameters such as the recalibration prior are chosen on validation
-  subjects/days that are not reported (see experiments.py).
+  subjects/days that are not reported (see myobridge.bench).
 """
 
 from __future__ import annotations
@@ -22,7 +22,13 @@ from numpy.typing import NDArray
 
 from .datasets.core import Recording
 from .dsp import EmgFilter
-from .features import extract_features, noise_thresholds, window_stack
+from .features import (
+    DEFAULT_FEATURE_SET,
+    channel_columns,
+    extract_features,
+    noise_thresholds,
+    window_stack,
+)
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
@@ -37,16 +43,21 @@ class FeatureConfig:
     settle_s: float = 0.25  # skip filter start-up and the move into the pose
     band: tuple[float, float] = (20.0, 450.0)
     threshold_k: float = 0.5  # ZC/SSC thresholds = k * rest std (see noise_thresholds)
+    feature_set: str = DEFAULT_FEATURE_SET  # see features.FEATURE_SETS
 
     def window_samples(self, fs: float) -> int:
+        """Window length in samples at sample rate `fs`."""
         return int(round(self.window_s * fs))
 
     def step_samples(self, fs: float) -> int:
+        """Step between windows in samples at sample rate `fs`."""
         return int(round(self.step_s * fs))
 
 
 @dataclass(frozen=True)
 class Thresholds:
+    """Per-channel zero-crossing and slope-sign-change thresholds (see `fit_thresholds`)."""
+
     zc: FloatArray
     ssc: FloatArray
 
@@ -70,11 +81,17 @@ class FeatureTable:
     t_end: FloatArray
     n_channels: int
     meta: dict[str, object] = field(default_factory=dict)
+    feature_set: str = DEFAULT_FEATURE_SET
+
+    def columns(self, channels: Sequence[int]) -> NDArray[np.intp]:
+        """Columns of X that belong to `channels` (see features.channel_columns)."""
+        return channel_columns(channels, self.n_channels, self.feature_set)
 
     def __len__(self) -> int:
         return int(self.X.shape[0])
 
     def take(self, mask: NDArray[np.bool_] | NDArray[np.intp]) -> FeatureTable:
+        """The rows selected by a boolean mask or an index array, with their metadata."""
         return replace(
             self,
             X=self.X[mask],
@@ -192,7 +209,7 @@ def featurize(
         n = len(windows)
         if n == 0:
             continue  # recording shorter than settle + one window
-        blocks.append(extract_features(windows, thresholds.zc, thresholds.ssc))
+        blocks.append(extract_features(windows, thresholds.zc, thresholds.ssc, cfg.feature_set))
         cols["lab"].append(np.full(n, rec.label))
         cols["sub"].append(np.full(n, rec.subject))
         cols["ses"].append(np.full(n, rec.session))
@@ -200,12 +217,11 @@ def featurize(
         rec_idx.append(np.full(n, i, dtype=np.int64))
         starts.append((skip + np.arange(n) * step) / fs)
 
-    n_feat = 5 * n_ch
     if not blocks:
         raise ValueError("no recording was long enough for a single window")
     t_start = np.concatenate(starts)
     return FeatureTable(
-        X=np.vstack(blocks).reshape(-1, n_feat),
+        X=np.vstack(blocks),
         label=np.concatenate(cols["lab"]).astype(np.int64),
         subject=np.concatenate(cols["sub"]).astype(np.int64),
         session=np.concatenate(cols["ses"]).astype(np.int64),
@@ -215,6 +231,7 @@ def featurize(
         t_end=t_start + size / fs,
         n_channels=n_ch,
         meta={"durations": [r.duration_s for r in recordings], "fs": fs},
+        feature_set=cfg.feature_set,
     )
 
 
@@ -222,6 +239,7 @@ def featurize(
 
 
 def accuracy(y_true: NDArray[np.generic], y_pred: NDArray[np.generic]) -> float:
+    """Share of predictions equal to the truth. Raises on an empty test set."""
     if len(y_true) == 0:
         raise ValueError("empty test set")
     return float(np.mean(np.asarray(y_true) == np.asarray(y_pred)))

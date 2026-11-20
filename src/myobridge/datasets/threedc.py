@@ -31,6 +31,7 @@ SOURCE = Source(
 FS = 1000.0
 N_CHANNELS = 10
 MAINS_HZ = 60.0  # recorded in Québec
+ADC_RAIL = 32700.0  # the armband's ADC is signed 16-bit; clean data reaches -32763
 GESTURES = (
     "neutral",
     "radial_deviation",

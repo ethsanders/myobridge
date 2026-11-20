@@ -8,7 +8,7 @@ On top we add the junk a real recording has: 60 Hz mains hum, slow baseline
 drift (electrode/skin potential wandering), and ADC noise.
 
 This is NOT real EMG. It's realistic enough to exercise the pipeline and the
-classifier, but real data will be messier (see docs/HOW_IT_WORKS.md).
+classifier, but real data will be messier (see docs/how-it-works.md).
 """
 
 from __future__ import annotations
@@ -56,8 +56,10 @@ class EmgSimulator:
         self.gesture = "rest"
         self.t = 0  # samples generated so far
 
-        # Shapes white noise into an EMG-like spectrum (stateful, like dsp.py).
-        self._shape_sos = signal.butter(4, [20, 250], btype="bandpass", fs=fs, output="sos")
+        # Shapes white noise into an EMG-like spectrum (stateful, like dsp.py),
+        # kept below Nyquist so slow sample rates work too.
+        band = [20.0, min(250.0, 0.45 * fs)]
+        self._shape_sos = signal.butter(4, band, btype="bandpass", fs=fs, output="sos")
         self._shape_zi = np.zeros((self._shape_sos.shape[0], 2, n_channels))
         # Activation follows the target with a ~60 ms time constant (muscles
         # don't switch on instantly). One-pole lowpass: y += a * (target - y).
@@ -68,6 +70,7 @@ class EmgSimulator:
         self._hum_phase = self.rng.uniform(0, 2 * np.pi)
 
     def set_gesture(self, gesture: str) -> None:
+        """Switch the simulated arm to `gesture` (one of `GESTURES`) from the next sample on."""
         if gesture not in GESTURE_PATTERNS:
             raise ValueError(f"unknown gesture {gesture!r}; choose from {GESTURES}")
         self.gesture = gesture

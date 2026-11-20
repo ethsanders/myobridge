@@ -7,6 +7,7 @@ from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
 from myobridge.features import (
+    FEATURE_SETS,
     channel_columns,
     extract_features,
     feature_names,
@@ -48,11 +49,12 @@ def test_per_channel_thresholds():
     assert zero_crossings(w, np.array([0.0, 50.0])).tolist() == [99, 0]
 
 
-def test_channel_columns_select_the_right_features():
-    names = feature_names(4)
-    cols = channel_columns([1, 3], 4)
+@pytest.mark.parametrize("feature_set", sorted(FEATURE_SETS))
+def test_channel_columns_select_the_right_features(feature_set):
+    names = feature_names(4, feature_set)
+    cols = channel_columns([1, 3], 4, feature_set)
     assert [names[c] for c in cols] == [
-        f"{f}_ch{c}" for f in ("mav", "rms", "wl", "zc", "ssc") for c in (1, 3)
+        f"{f}_ch{c}" for f in FEATURE_SETS[feature_set] for c in (1, 3)
     ]
     with pytest.raises(ValueError):
         channel_columns([4], 4)
@@ -77,7 +79,7 @@ def test_bad_shapes():
 @settings(max_examples=50, deadline=None)
 @given(arrays(np.float64, st.tuples(st.integers(3, 60), st.integers(1, 4)), elements=finite))
 def test_feature_invariants(w):
-    f = extract_features(w, 0.0, 0.0)
+    f = extract_features(w, 0.0, 0.0, feature_set="td")
     n, ch = w.shape
     assert f.shape == (5 * ch,) and np.all(np.isfinite(f))
     assert np.all(mav(w) <= rms(w) + 1e-9)  # mean |x| never exceeds RMS
@@ -93,6 +95,6 @@ def test_feature_invariants(w):
 def test_counts_are_scale_free_when_thresholds_scale_too(w, k):
     """Scaling the signal and the thresholds together leaves ZC/SSC unchanged,
     which is why thresholds come from each recording's own rest noise."""
-    a = extract_features(w, 1.0, 1.0)
-    b = extract_features(w * k, 1.0 * k, 1.0 * k**2)
+    a = extract_features(w, 1.0, 1.0, feature_set="td")
+    b = extract_features(w * k, 1.0 * k, 1.0 * k**2, feature_set="td")
     assert np.array_equal(a[6:], b[6:])

@@ -13,6 +13,7 @@ from myobridge.evaluation import (
     prefilter,
     summarize,
 )
+from myobridge.features import DEFAULT_FEATURE_SET, FEATURE_SETS
 
 
 @pytest.fixture
@@ -27,7 +28,8 @@ def test_featurize_shapes_and_window_times(ds):
     # 3 s recordings: windows start at 0.25 s, every 50 ms, while they fit
     per_rec = (3000 - 250 - 200) // 50 + 1  # in samples at 1 kHz
     assert len(t) == len(recs) * per_rec
-    assert t.X.shape[1] == 5 * 10
+    assert t.X.shape[1] == len(FEATURE_SETS[DEFAULT_FEATURE_SET]) * 10
+    assert t.columns([3]).tolist() == list(range(3, t.X.shape[1], 10))
     assert t.t_start.min() == pytest.approx(0.25)
     assert np.allclose(t.t_end - t.t_start, 0.2)
     assert t.t_end.max() <= 3.0 + 1e-9

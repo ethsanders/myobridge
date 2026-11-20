@@ -1,4 +1,16 @@
-"""Classic time-domain EMG features (Hudgins et al. 1993 style).
+"""Time-domain EMG features, computed per channel on short windows.
+
+Two feature sets are available (`FEATURE_SETS`):
+
+``"td"``
+    The classic Hudgins et al. (1993) set: mean absolute value, RMS, waveform
+    length, zero crossings and slope sign changes. 5 numbers per channel.
+``"td-ar-psd"`` (the default)
+    The same five, plus 4 autoregressive coefficients (the spectral shape of
+    the window) and the 6 TD-PSD features of Al-Timemy et al. (2016), which
+    are built from spectral moments and were designed to be robust to force
+    changes. 15 numbers per channel. On the validation people and days it
+    beat "td" on both datasets; docs/results.md has the test-split numbers.
 
 Every function takes a window shaped (n_samples, n_channels) and returns one
 value per channel. They also accept a stack of windows shaped
@@ -22,8 +34,30 @@ from numpy.typing import ArrayLike, NDArray
 FloatArray = NDArray[np.float64]
 Threshold = float | FloatArray
 
-FEATURE_NAMES = ("mav", "rms", "wl", "zc", "ssc")
+TD_NAMES = ("mav", "rms", "wl", "zc", "ssc")
+AR_ORDER = 4
+AR_NAMES = tuple(f"ar{k}" for k in range(1, AR_ORDER + 1))
+TDPSD_NAMES = ("m0", "m2", "m4", "sparsity", "irf", "wlf")
+
+FEATURE_SETS: dict[str, tuple[str, ...]] = {
+    "td": TD_NAMES,
+    "td-ar-psd": TD_NAMES + AR_NAMES + TDPSD_NAMES,
+}
+DEFAULT_FEATURE_SET = "td-ar-psd"
+FEATURE_NAMES = TD_NAMES  # kept for code written against v0.1
+
 _AXIS = -2  # samples axis, for both a single window and a stack of windows
+_EPS = float(np.spacing(1))
+
+
+def feature_set_names(feature_set: str) -> tuple[str, ...]:
+    """Per-channel feature names of a feature set, in column-block order."""
+    try:
+        return FEATURE_SETS[feature_set]
+    except KeyError:
+        raise ValueError(
+            f"unknown feature set {feature_set!r}; choose from {sorted(FEATURE_SETS)}"
+        ) from None
 
 
 def mav(w: FloatArray) -> FloatArray:
@@ -73,13 +107,74 @@ def slope_sign_changes(w: FloatArray, threshold: Threshold = 0.0) -> FloatArray:
     return out
 
 
+def ar_coefficients(w: FloatArray, order: int = AR_ORDER) -> list[FloatArray]:
+    """Autoregressive coefficients a_1..a_order, one array per coefficient.
+
+    An AR model predicts each sample from the previous ones,
+    x[n] ~ a_1 x[n-1] + ... + a_p x[n-p], so the coefficients describe the
+    window's spectral shape independently of its amplitude. They're fitted
+    with the Yule-Walker equations (autocorrelation method), which always
+    give a stable model and cost one small linear solve per channel.
+    A flat channel gets all-zero coefficients.
+    """
+    if order < 1:
+        raise ValueError("order must be >= 1")
+    x = np.moveaxis(w - w.mean(axis=_AXIS, keepdims=True), _AXIS, -1)  # (..., ch, n)
+    n = x.shape[-1]
+    if n <= order:
+        raise ValueError("the window must be longer than the AR order")
+    r = np.stack([np.sum(x[..., : n - k] * x[..., k:], axis=-1) for k in range(order + 1)], -1)
+    # Normalise by the lag-0 term so the system is unit-free; a flat channel
+    # has r0 = 0, and the tiny ridge then makes its solution exactly zero.
+    rho = r / np.maximum(r[..., :1], np.finfo(np.float64).tiny)
+    lags = np.abs(np.arange(order)[:, None] - np.arange(order)[None, :])
+    toeplitz = rho[..., lags] + 1e-9 * np.eye(order)
+    a = np.linalg.solve(toeplitz, rho[..., 1:, None])[..., 0]  # (..., ch, order)
+    return [np.ascontiguousarray(a[..., k]) for k in range(order)]
+
+
+def _tdpsd_raw(w: FloatArray) -> list[FloatArray]:
+    """The six TD-PSD quantities of one signal, before the orientation step."""
+    n = w.shape[_AXIS]
+    d1 = np.diff(w, axis=_AXIS)
+    d2 = np.diff(d1, axis=_AXIS)
+    # Spectral moments via Parseval: m0 from the signal, m2 from its first
+    # difference, m4 from its second. The 0.1 power compresses their range.
+    m0 = (np.sqrt(np.sum(w**2, axis=_AXIS)) / (n - 1)) ** 0.1 / 0.1
+    m2 = np.sqrt(np.sum(d1**2, axis=_AXIS) / (n - 1)) ** 0.1 / 0.1
+    m4 = np.sqrt(np.sum(d2**2, axis=_AXIS) / (n - 1)) ** 0.1 / 0.1
+    sparsity = np.sqrt(np.abs((m0 - m2) * (m0 - m4))) / (m0 + _EPS)
+    irf = m2 / (np.sqrt(m0 * m4) + _EPS)  # irregularity factor
+    wlf = np.sqrt(np.sum(np.abs(d1), axis=_AXIS) / (np.sum(np.abs(d2), axis=_AXIS) + _EPS))
+    raw = [m0, m0 - m2, m0 - m4, sparsity, irf, wlf]
+    return [np.log(np.abs(v) + _EPS) for v in raw]
+
+
+def tdpsd(w: FloatArray) -> list[FloatArray]:
+    """TD-PSD features (Al-Timemy et al., IEEE TNSRE 2016), one array per feature.
+
+    Each of the six quantities is computed on the window and on its log-power
+    version log(x^2), and the pair (a, b) is combined as -2ab / (a^2 + b^2),
+    the "orientation" step that makes the result insensitive to overall force.
+    This follows the reference implementation in LibEMG (MIT licence,
+    Eddy et al. 2023), with small guards so a flat channel stays finite.
+    """
+    a = _tdpsd_raw(w)
+    b = _tdpsd_raw(np.log(w**2 + _EPS))
+    return [(-2.0 * fa * fb) / (fa * fa + fb * fb + _EPS) for fa, fb in zip(a, b, strict=True)]
+
+
 def extract_features(
-    window: ArrayLike, zc_threshold: Threshold = 5.0, ssc_threshold: Threshold = 25.0
+    window: ArrayLike,
+    zc_threshold: Threshold = 5.0,
+    ssc_threshold: Threshold = 25.0,
+    feature_set: str = DEFAULT_FEATURE_SET,
 ) -> FloatArray:
     """Feature vector(s) for one window or a stack of windows.
 
-    Layout is feature-major: [mav_ch0..mav_chN, rms_ch0.., wl.., zc.., ssc..],
-    so column `f * n_channels + ch` is feature f of channel ch.
+    Layout is feature-major: [mav_ch0..mav_chN, rms_ch0.., wl.., zc.., ssc.., ...],
+    so column `f * n_channels + ch` is feature f of channel ch, in the order
+    of `FEATURE_SETS[feature_set]`.
     Amplitude features (mav, rms, wl) are log-scaled: EMG amplitude spans
     orders of magnitude between rest and a hard contraction, and the log makes
     the class clusters roughly the same size, which is what LDA assumes.
@@ -87,33 +182,40 @@ def extract_features(
     The default thresholds suit the ESP32's 12-bit counts; for other
     recordings pass the output of `noise_thresholds()`.
     """
+    names = feature_set_names(feature_set)
     w = np.asarray(window, dtype=np.float64)
     if w.ndim not in (2, 3):
         raise ValueError("window must be (n_samples, n_channels) or (n_windows, n, n_channels)")
-    if w.shape[-2] < 3:
-        raise ValueError("a window needs at least 3 samples")
+    rich = len(names) > len(TD_NAMES)
+    min_samples = AR_ORDER + 1 if rich else 3
+    if w.shape[-2] < min_samples:
+        raise ValueError(f"a window needs at least {min_samples} samples for {feature_set!r}")
     amplitude = [mav(w), rms(w), waveform_length(w)]
     counts = [zero_crossings(w, zc_threshold), slope_sign_changes(w, ssc_threshold)]
-    return np.concatenate([np.log1p(f) for f in amplitude] + counts, axis=-1)
+    parts = [np.log1p(f) for f in amplitude] + counts
+    if rich:
+        parts += ar_coefficients(w) + tdpsd(w)
+    return np.concatenate(parts, axis=-1)
 
 
-def feature_names(n_channels: int) -> list[str]:
+def feature_names(n_channels: int, feature_set: str = DEFAULT_FEATURE_SET) -> list[str]:
     """Column names matching extract_features' layout, e.g. 'wl_ch2'."""
-    return [f"{f}_ch{c}" for f in FEATURE_NAMES for c in range(n_channels)]
+    return [f"{f}_ch{c}" for f in feature_set_names(feature_set) for c in range(n_channels)]
 
 
-def channel_columns(channels: Sequence[int], n_channels: int) -> NDArray[np.intp]:
+def channel_columns(
+    channels: Sequence[int], n_channels: int, feature_set: str = DEFAULT_FEATURE_SET
+) -> NDArray[np.intp]:
     """Feature columns that belong to a subset of channels.
 
     Every feature is computed per channel, so dropping channels is the same
     as dropping their columns. That makes "what if I only had 4 electrodes?"
     a cheap experiment: compute features once, then select columns.
     """
+    n_per = len(feature_set_names(feature_set))
     if any(not 0 <= c < n_channels for c in channels):
         raise ValueError(f"channels must be in [0, {n_channels})")
-    return np.array(
-        [f * n_channels + c for f in range(len(FEATURE_NAMES)) for c in channels], dtype=np.intp
-    )
+    return np.array([f * n_channels + c for f in range(n_per) for c in channels], dtype=np.intp)
 
 
 def noise_thresholds(rest: ArrayLike, k: float = 0.5) -> tuple[FloatArray, FloatArray]:
@@ -163,13 +265,17 @@ class StreamingWindower:
         self.since_last = 0  # samples received since the last emitted window
 
     def push(self, block: FloatArray) -> list[FloatArray]:
-        windows = []
-        for row in range(block.shape[0]):  # walk sample by sample: easy to reason about
-            self.since_last += 1
-            if self.since_last == self.step:
-                self.since_last = 0
-                full = np.vstack([self.buffer, block[: row + 1]])
-                if full.shape[0] >= self.size:
-                    windows.append(full[-self.size :])
-        self.buffer = np.vstack([self.buffer, block])[-self.size :]
+        """Add samples, shape (n, n_channels); returns the windows completed by them, oldest first.
+
+        A window ends on every `step`-th sample since the stream began, as soon
+        as `size` samples have arrived, however the stream is cut into blocks.
+        """
+        full = np.vstack([self.buffer, block])
+        old = len(self.buffer)
+        # rows of `block` (1-based) on which the step counter reaches `step`
+        first = self.step - self.since_last
+        ends = old + np.arange(first, len(block) + 1, self.step)
+        windows = [full[end - self.size : end] for end in ends if end >= self.size]
+        self.since_last = (self.since_last + len(block)) % self.step
+        self.buffer = full[-self.size :]
         return windows
