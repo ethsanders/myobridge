@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>myobridge live demo</title>
+  <meta name="description" content="Real forearm EMG decoded into gestures in your browser by the myobridge Python library, with a signal-quality monitor you can try to break.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../">myobridge</a>
+    <nav><a href="../">Docs</a><a href="https://github.com/ethsanders/myobridge">GitHub</a></nav>
+  </header>
+
+  <main>
+    <section class="intro">
+      <h1>Decode a real forearm, in your browser</h1>
+      <p>
+        This page runs the myobridge Python library itself (via
+        <a href="https://pyodide.org">Pyodide</a>) on real recordings from the
+        <a href="https://github.com/libemg/3DCDataset">3DC dataset</a>. It
+        calibrates on one part of a person's session, then streams the rest
+        through the live pipeline 20 samples at a time, exactly as packets
+        arrive from the armband. Break an electrode while it plays and watch
+        the quality monitor catch it.
+      </p>
+    </section>
+
+    <section class="setup" aria-labelledby="setup-title">
+      <h2 id="setup-title" class="visually-hidden">Setup</h2>
+      <label>Person
+        <select id="person"></select>
+      </label>
+      <label>Electrodes
+        <select id="channels">
+          <option value="all">All 10 (the 3DC armband)</option>
+          <option value="4">4, spread evenly (like myobridge)</option>
+        </select>
+      </label>
+      <button id="start" class="primary">Load and calibrate</button>
+      <p id="status" role="status" aria-live="polite">The first run downloads Python, NumPy and SciPy (your browser caches them) and about 7 MB of recordings.</p>
+      <div id="progress" class="progress" hidden><div></div></div>
+    </section>
+
+    <section id="live" class="live" hidden>
+      <div class="decoder" aria-live="off">
+        <div class="pair">
+          <div>
+            <span class="label">Holding</span>
+            <span id="truth" class="gesture">-</span>
+          </div>
+          <div>
+            <span class="label">Decoded</span>
+            <span id="prediction" class="gesture">-</span>
+          </div>
+        </div>
+        <div class="meter" aria-hidden="true"><div id="confidence"></div></div>
+        <dl class="stats">
+          <div><dt>Confidence</dt><dd id="confidence-text">-</dd></div>
+          <div><dt>Correct so far</dt><dd id="accuracy">-</dd></div>
+          <div><dt>Time</dt><dd id="clock">0.0 s</dd></div>
+          <div><dt>Model</dt><dd id="model">-</dd></div>
+        </dl>
+        <div class="controls">
+          <button id="play">Pause</button>
+          <label>Speed
+            <select id="speed">
+              <option value="1" selected>1x</option>
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+            </select>
+          </label>
+          <button id="restart">Restart</button>
+        </div>
+      </div>
+
+      <div class="channels">
+        <div class="channel-head">
+          <span>Raw signal per electrode</span>
+          <span>Break it</span>
+        </div>
+        <div id="lanes"></div>
+        <p class="legend">
+          <span><span class="dot ok"></span> healthy</span>
+          <span><span class="dot warn"></span> flagged, still used</span>
+          <span><span class="dot bad"></span> flagged and dropped</span>
+        </p>
+      </div>
+    </section>
+
+    <section class="notes">
+      <h2>What you're seeing</h2>
+      <ul>
+        <li>The model is LDA on 15 features per electrode, trained on the person's first two
+          cycles through the 11 gestures (about 2 minutes of data). It then decodes their first
+          cycle of the second half of the session, which it never saw.</li>
+        <li>An electrode coming off or clipping makes the decoder drop that channel and carry on
+          with the others, using the same model minus that electrode's features. Mains hum and
+          motion are flagged but kept, because the filters already remove most of them.</li>
+        <li>The trace shows the <em>raw</em> signal, before filtering, which is what the monitor
+          looks at.</li>
+      </ul>
+      <p class="credit">
+        Recordings: 3DC dataset, Côté-Allard et al., <em>Frontiers in Bioengineering and
+        Biotechnology</em> 8:158 (2020), as mirrored by the
+        <a href="https://github.com/libemg">LibEMG</a> project. Your browser loads them directly
+        from that repository; this site doesn't host a copy.
+      </p>
+    </section>
+  </main>
+
+  <template id="lane-template">
+    <div class="lane">
+      <span class="dot ok" aria-hidden="true"></span>
+      <span class="name"></span>
+      <canvas height="44"></canvas>
+      <select class="fault" aria-label="Fault">
+        <option value="">Working</option>
+        <option value="lead_off">Electrode off</option>
+        <option value="clipping">Clipping</option>
+        <option value="line_noise">Mains hum</option>
+        <option value="motion">Cable motion</option>
+      </select>
+      <span class="issue"></span>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
