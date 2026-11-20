@@ -244,3 +244,15 @@ def test_demo_payload_matches_the_benchmark() -> None:
         ):
             got = d["variants"][variant]["check"]["covered"] / n
             assert abs(got - md[row]["0.1"]["per_group"][str(d["day"])]["coverage"]) < 1e-6
+        # the page quotes the bench's own day beside its count
+        own = h["bench_per_day"][str(d["day"])]
+        assert (
+            own["adapt-myobridge"]
+            == md["adapt_temp_aps"]["0.1"]["per_group"][str(d["day"])]["coverage"]
+        )
+        # myobridge's random tie-breaks come from another stream here, so the
+        # page's count may move, but only by about a point (the page says so)
+        got = d["variants"]["adapt-myobridge-ok"]["check"]["covered"] / n
+        assert abs(got - own["adapt-myobridge"]) < 0.025
+    within = md["adapt_validation_days"]["0.1"]["share_within_5_points"]
+    assert h["spread"]["adapt-textbook"]["within_5_points"] == pytest.approx(within, abs=1e-6)

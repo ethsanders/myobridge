@@ -100,6 +100,15 @@ function renderBenchmark() {
     `Over all ${h.test_days} test days, this setting delivers ${pct(c.mean)} ` +
     `[${pct(c.low)}, ${pct(c.high)}] against the ${pct(h.promised, 0)} promise ` +
     `(from myobridge bench conformal).`;
+  const day = state.data.days[state.day].day;
+  const own = h.bench_per_day?.[String(day)]?.[key];
+  if (own != null && state.electrode === "ok") {
+    text +=
+      ` The benchmark's own run of day ${day}: ${pct(own)}` +
+      (state.method === "myobridge"
+        ? " (its random tie-breaks between equally likely gestures are drawn separately, so it can differ from this page by about a point)."
+        : ", the same as here.");
+  }
   if (state.electrode !== "ok") {
     const f = h.threedc_lead_off;
     text +=
@@ -107,6 +116,20 @@ function renderBenchmark() {
       `${pct(f.no_monitor)} without the monitor and ${pct(f.monitor_shared_threshold)} with it.`;
   }
   $("benchmark").textContent = text;
+}
+
+// The "Try this" note on recalibrating the textbook recipe, from the benchmark's 91 days.
+function renderRivalNote() {
+  const h = state.data.headline;
+  const el = $("rival-note");
+  if (!el || !h.spread) return;
+  const r = h.spread["adapt-myobridge"];
+  const t = h.spread["adapt-textbook"];
+  el.textContent =
+    `Over all ${h.test_days} test days it covers at least as much as myobridge on ` +
+    `${h.rival_at_least_recipe_days} of them, but only ${pct(t.within_5_points, 0)} of its days ` +
+    `land within 5 points of the promise (myobridge: ${pct(r.within_5_points, 0)}), and its worst ` +
+    `day is ${pct(t.worst_day)} (myobridge: ${pct(r.worst_day)}).`;
 }
 
 function drawStrip(day, variant, n) {
@@ -176,6 +199,7 @@ function pickDay(i) {
   for (const b of $("day-buttons").children) {
     b.setAttribute("aria-pressed", String(Number(b.dataset.index) === i));
   }
+  renderBenchmark();
   render();
 }
 
@@ -258,6 +282,7 @@ async function main() {
   }
   wire();
   fromQuery();
+  renderRivalNote();
   pickDay(state.day);
   renderBenchmark();
   requestAnimationFrame(tick);

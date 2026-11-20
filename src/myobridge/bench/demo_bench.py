@@ -61,7 +61,26 @@ def _encode(sets: NDArray[np.bool_]) -> list[int]:
     return [int(v) for v in sets.astype(np.int64) @ weights]
 
 
-def _headline(conformal: dict[str, Any]) -> dict[str, Any]:
+# the page's four "Sets from" x "Recalibrate" settings and their benchmark rows
+ROWS = {
+    "adapt-myobridge": "adapt_temp_aps",
+    "adapt-textbook": "adapt_validation_days",
+    "static-myobridge": "static_temp_aps",
+    "static-textbook": "static_validation_days",
+}
+
+
+def _spread(per_group: dict[str, Any]) -> dict[str, float]:
+    """How one setting's coverage varies from day to day over the test days."""
+    c = np.array([g["coverage"] for g in per_group.values()])
+    return {
+        "within_5_points": float(np.mean(np.abs(c - (1 - ALPHA)) <= 0.05)),
+        "worst_day": float(c.min()),
+        "sd": float(c.std(ddof=1)),
+    }
+
+
+def _headline(conformal: dict[str, Any], demo_days: list[int]) -> dict[str, Any]:
     """The benchmark numbers the page shows beside its own counts."""
     md = conformal["multiday"]
     rows = md["rows"]
@@ -72,14 +91,24 @@ def _headline(conformal: dict[str, Any]) -> dict[str, Any]:
         c = row[a]["coverage"]
         return {"mean": c["mean"], "low": c["ci95_low"], "high": c["ci95_high"]}
 
+    per = {k: rows[r][a]["per_group"] for k, r in ROWS.items()}
+    recipe, rival = per["adapt-myobridge"], per["adapt-textbook"]
     return {
         "promised": 1 - ALPHA,
         "test_days": len(md["test_days"]),
-        "multiday": {
-            "adapt-myobridge": cov(rows["adapt_temp_aps"]),
-            "adapt-textbook": cov(rows["adapt_validation_days"]),
-            "static-myobridge": cov(rows["static_temp_aps"]),
-            "static-textbook": cov(rows["static_validation_days"]),
+        "multiday": {k: cov(rows[r]) for k, r in ROWS.items()},
+        "spread": {k: _spread(v) for k, v in per.items()},
+        # the textbook recipe recalibrated each day covers at least as much as
+        # myobridge on this many test days
+        "rival_at_least_recipe_days": sum(
+            rival[d]["coverage"] >= recipe[d]["coverage"] for d in recipe
+        ),
+        # the benchmark's own coverage on each demo day. The textbook rows have
+        # no random part and match the page exactly; myobridge's APS tie-breaks
+        # are drawn from the bench's random stream there and from the library's
+        # here, so those days can differ by about a point.
+        "bench_per_day": {
+            str(d): {k: v[str(d)]["coverage"] for k, v in per.items()} for d in demo_days
         },
         "singleton_rate": rows["adapt_temp_aps"][a]["singleton_rate"],
         "accuracy_when_singleton": rows["adapt_temp_aps"][a]["accuracy_when_singleton"],
@@ -292,7 +321,7 @@ def run(opts: RunOptions) -> dict[str, Any]:
                 }
             )
 
-    headline = _headline(conformal)
+    headline = _headline(conformal, [d["day"] for d in out_days])
     payload: dict[str, Any] = {
         "about": "Gesture sets for the browser demo, made by `myobridge bench demo`. No EMG.",
         "provenance": provenance(
