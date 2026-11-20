@@ -22,10 +22,10 @@ SOURCE = Source(
     url="https://github.com/libemg/3DCDataset",
     commit="1af9058237a5d79a883feb2ce61f4d59090288ac",
     citation=(
-        "Côté-Allard et al., 'Interpreting deep learning features for myoelectric control: "
-        "a comparison with handcrafted features', Frontiers in Bioengineering and "
-        "Biotechnology 8:158 (2020); data first collected for Côté-Allard et al., IEEE TNSRE "
-        "27(4):760-771 (2019)."
+        "U. Côté-Allard, G. Gagnon-Turcotte, F. Laviolette and B. Gosselin, 'A low-cost, "
+        "wireless, 3-D-printed custom armband for sEMG hand gesture recognition', Sensors "
+        "19(12):2811 (2019), doi:10.3390/s19122811; used again in Côté-Allard et al., "
+        "Frontiers in Bioengineering and Biotechnology 8:158 (2020)."
     ),
 )
 FS = 1000.0

@@ -128,7 +128,9 @@ doesn't depend on the features' units.
 Because the model is just means and a covariance, dropping a channel is
 exact and instant: take the rows and columns of the other channels' features
 (`LDAClassifier.subset`). That is how the pipeline carries on when the
-quality monitor flags an electrode, without keeping the training data.
+quality monitor flags an electrode, without keeping the training data. The
+idea is Zhang and Huang's sensor-fault-tolerant LDA (*Journal of
+NeuroEngineering and Rehabilitation* 12:18, 2015).
 
 **Majority vote (k = 5).** The output is the most common label of the last 5
 windows (ties go to the newest). It removes single-window flickers at the cost
@@ -186,7 +188,8 @@ step, shorter window (each trades stability for speed).
   same pipeline gets 92.4% within one sitting and 73.5% on later days without
   recalibration ([results.md](results.md)). A second per gesture at the start
   of each session, through `adapt()`, brings it back to 89.0%, and it takes
-  well under a millisecond.
+  well under a millisecond. `adapt()` is the covariate-shift adaptation of
+  Vidovic et al. (*IEEE TNSRE* 24(9):961-970, 2016).
 - **Electrode placement matters more than the algorithm.** Shift the band 1 cm
   and the patterns change. Mark positions on the skin; put electrodes along
   the muscle fibres over the belly; reference on bone.

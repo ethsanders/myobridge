@@ -30,10 +30,16 @@ Why it's here: it has the same sample rate as myobridge's ESP32, enough
 people to test what happens with someone new, and more channels than
 myobridge so we can ask what using only 4 costs.
 
-Cite it as the mirror's README asks: U. Côté-Allard et al., "Deep learning
-for electromyographic hand gesture signal classification using transfer
-learning", *IEEE Transactions on Neural Systems and Rehabilitation
-Engineering* 27(4):760-771, 2019.
+The recordings were made for U. Côté-Allard, G. Gagnon-Turcotte, F.
+Laviolette and B. Gosselin, "A low-cost, wireless, 3-D-printed custom armband
+for sEMG hand gesture recognition", *Sensors* 19(12):2811, 2019
+([doi:10.3390/s19122811](https://doi.org/10.3390/s19122811)), which
+introduces the 3DC armband and describes "a new offline dataset featuring 22
+able-bodied participants performing eleven hand/wrist gestures". Cite that
+paper. The LibEMG mirror's README instead names Côté-Allard et al., *IEEE
+TNSRE* 27(4):760-771, 2019, a transfer-learning paper whose experiments use
+the Myo armband, and it also lists the dataset's later use in *Frontiers in
+Bioengineering and Biotechnology* 8:158, 2020.
 
 ## MultiDay: one person, many days
 

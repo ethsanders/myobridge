@@ -12,6 +12,13 @@ without the bad channel. `myobridge listen` shows the result live.
 Every number here is in `results/quality.json`, made by
 `myobridge bench quality` on the raw 3DC recordings.
 
+Related work: automatic EMG quality indices go back at least to Fraser et
+al.'s one-class SVM (*IEEE Trans. Instrum. Meas.* 63(12), 2014) and McCool et
+al.'s contaminant classifier (*IEEE TNSRE* 22(4), 2014), and the fallback to
+a model without the bad channel is Zhang and Huang's (*JNER* 12:18, 2015).
+What myobridge adds is small: one readable rule per fault, with thresholds
+set on held-out people and tested on others.
+
 ## The four checks
 
 Each check looks at the last 1 s of **raw** samples on one channel.
@@ -107,7 +114,10 @@ for the whole test session and gestures are decoded three ways:
 - **no monitor:** the normal model, bad channel included
 - **monitor:** whenever the monitor flags a channel, use a model trained
   without it (`LDAClassifier.subset` drops that channel's feature columns
-  and gives exactly the model a refit without them would; models are cached)
+  and gives exactly the model a refit without them would; models are cached).
+  This fallback is Zhang and Huang's (*JNER* 12:18, 2015), who paired it
+  with a Mahalanobis-distance detector; myobridge's detectors are instead one
+  plain rule per fault type
 - **oracle:** always use the model without the broken channel (the best the
   monitor could do)
 

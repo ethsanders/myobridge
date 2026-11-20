@@ -192,7 +192,8 @@ class LDAClassifier:
         taking the matching rows of the means and the matching block of the
         covariance; the ridge is per feature, so it carries over unchanged.
         So the live pipeline can stop using a broken electrode instantly,
-        without keeping the training data or refitting.
+        without keeping the training data or refitting (the sensor-fault
+        tolerant LDA of Zhang & Huang, JNER 12:18, 2015).
         """
         if self.means_ is None or self.covariance_ is None or self.priors_ is None:
             raise RuntimeError("subset needs a fitted model (saved in the current format)")
@@ -275,8 +276,10 @@ def adapt(
     `mean_prior` is "how many windows the old mean is worth". 0 means: trust
     the new data completely (classes with no new data keep their old mean).
     `covariance_weight` in [0, 1] blends in the new data's pooled covariance;
-    0 keeps the old one. This is the supervised version of the adaptive-LDA
-    idea used in the myoelectric literature (e.g. Vidovic et al. 2016).
+    0 keeps the old one. This is the covariate-shift adaptation of Vidovic et
+    al., "Improving the robustness of myoelectric pattern recognition for upper
+    limb prostheses by covariate shift adaptation", IEEE TNSRE 24(9):961-970
+    (2016); `mean_prior` states their mean weight as a number of windows.
     """
     if base.means_ is None or base.covariance_ is None or base.classes_ is None:
         raise RuntimeError("base classifier must be fitted (and saved in the current format)")
