@@ -21,6 +21,7 @@ from .classifier import (
     calibrate,
     recording_to_features,
 )
+from .conformal import ConformalGestures
 from .dsp import EmgFilter
 from .faults import Fault
 from .features import (
@@ -41,6 +42,7 @@ __version__ = "0.2.0"
 
 __all__ = [
     "DEFAULT_FEATURE_SET",
+    "ConformalGestures",
     "FEATURE_SETS",
     "EmgFilter",
     "EmgSimulator",

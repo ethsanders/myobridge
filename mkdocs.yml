@@ -41,6 +41,7 @@ nav:
   - How it works:
       - Overview: how-it-works.md
       - Signal quality monitor: signal-quality.md
+      - Knowing when it doesn't know: conformal.md
       - Does 1 kHz alias?: aliasing.md
   - Results:
       - All experiments: results.md

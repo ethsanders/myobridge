@@ -4,13 +4,17 @@ Optionally the pipeline also watches signal quality: give it a
 `QualityMonitor` and it stops using any channel the monitor flags for one of
 `drop_on` (an electrode that came off, or one that clips), switching to the
 same model minus that channel's features until the channel recovers.
+
+Give it a `ConformalGestures` calibration too and each prediction also
+carries the window's gesture *set*: one gesture when the model is sure, more
+(or none) when it isn't. See `myobridge.conformal`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -19,6 +23,9 @@ from .classifier import LDAClassifier, MajorityVote
 from .dsp import EmgFilter
 from .features import FEATURE_SETS, StreamingWindower, Threshold, channel_columns, extract_features
 from .quality import DROP_CHANNEL_ON, Issue, QualityMonitor, QualityReport
+
+if TYPE_CHECKING:
+    from .conformal import ConformalGestures
 
 
 @dataclass
@@ -30,6 +37,12 @@ class Prediction:
     confidence: float  # LDA probability of `gesture` for this window
     sample_index: int  # stream position (samples) where the window ended
     dropped_channels: tuple[int, ...] = ()  # channels left out because the monitor flagged them
+    gesture_set: tuple[str, ...] | None = None  # this window's conformal set, if calibrated
+
+    @property
+    def sure(self) -> bool:
+        """True when a conformal set was computed and holds exactly one gesture."""
+        return self.gesture_set is not None and len(self.gesture_set) == 1
 
 
 class GesturePipeline:
@@ -59,11 +72,14 @@ class GesturePipeline:
         ssc_threshold: Threshold = 25.0,
         monitor: QualityMonitor | None = None,
         drop_on: Collection[Issue] = DROP_CHANNEL_ON,
+        conformal: ConformalGestures | None = None,
     ):
         if not model.is_fitted:
             raise ValueError("the model is not fitted")
         if monitor is not None and monitor.n_channels != n_channels:
             raise ValueError("the monitor watches a different number of channels")
+        if conformal is not None and conformal.model is not model:
+            conformal = conformal.with_model(model)  # same classes required
         trained = model.settings
         if trained is not None:
             for name, ours, theirs in (
@@ -92,6 +108,10 @@ class GesturePipeline:
         self.dropped: tuple[int, ...] = ()
         self._labels = [str(c) for c in model.classes]  # labels may be ints or strings
         self._models: dict[tuple[int, ...], LDAClassifier] = {(): model}
+        self.conformal = conformal
+        self._conformal: dict[tuple[int, ...], ConformalGestures] = {}
+        if conformal is not None:
+            self._conformal[()] = conformal
 
     @classmethod
     def from_model(cls, model: LDAClassifier, n_channels: int, **overrides: Any) -> GesturePipeline:
@@ -141,6 +161,9 @@ class GesturePipeline:
         if self.dropped:
             keep = [c for c in range(self.n_channels) if c not in self.dropped]
             X = X[:, channel_columns(keep, self.n_channels, self.feature_set)]
+        sets = None
+        if self.conformal is not None:
+            sets = self._conformal_without(self.dropped).predict_sets(X)
         predictions = []
         for i, proba in enumerate(model.predict_proba(X)):
             label = self._labels[int(np.argmax(proba))]
@@ -152,6 +175,9 @@ class GesturePipeline:
                     confidence=float(proba[self._labels.index(voted)]),
                     sample_index=last_end - (len(windows) - 1 - i) * step,
                     dropped_channels=self.dropped,
+                    gesture_set=None
+                    if sets is None
+                    else tuple(self._labels[j] for j in np.flatnonzero(sets[i])),
                 )
             )
         return predictions
@@ -160,6 +186,15 @@ class GesturePipeline:
         bad = tuple(c.channel for c in report.channels if self.drop_on & set(c.issues))
         # With every channel flagged there is nothing better to fall back on.
         return () if len(bad) == self.n_channels else bad
+
+    def _conformal_without(self, channels: tuple[int, ...]) -> ConformalGestures:
+        # A model without some channels keeps the full model's thresholds.
+        # The promise was calibrated for the full model only; bench conformal
+        # measures what a dropped channel does to it.
+        assert self.conformal is not None
+        if channels not in self._conformal:
+            self._conformal[channels] = self.conformal.with_model(self._model_without(channels))
+        return self._conformal[channels]
 
     def _model_without(self, channels: tuple[int, ...]) -> LDAClassifier:
         if channels not in self._models:

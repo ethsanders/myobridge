@@ -7,6 +7,7 @@ from myobridge import (
     EmgSimulator, Receiver,              # where samples come from
     EmgFilter, extract_features,         # signal processing
     LDAClassifier, calibrate, adapt,     # the model
+    ConformalGestures,                   # gesture sets with a coverage promise
     GesturePipeline, Prediction,         # live decoding
     QualityMonitor, QualityConfig,       # signal-quality checks
     Replay, Fault,                       # replaying recordings, injecting faults
@@ -18,7 +19,7 @@ The pages in this section are generated from the docstrings in
 
 | Page | Modules | What's there |
 |---|---|---|
-| [Live decoding](decoding.md) | `pipeline`, `classifier` | The streaming pipeline, LDA, calibration and recalibration |
+| [Live decoding](decoding.md) | `pipeline`, `classifier`, `conformal` | The streaming pipeline, LDA, calibration, recalibration and conformal gesture sets |
 | [Signal processing](signal.md) | `dsp`, `features`, `quality`, `faults` | Filters, feature sets, the quality monitor, simulated faults |
 | [Streaming and replay](streaming.md) | `protocol`, `receiver`, `simulator`, `replay` | The UDP packet format, the receiver, the fake armband, replays |
 | [Datasets and evaluation](evaluation.md) | `datasets`, `evaluation` | Pinned dataset loaders and leak-free scoring |

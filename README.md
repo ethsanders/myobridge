@@ -77,6 +77,11 @@ What stands out:
 - **New people need their own calibration.** Starting from 21 other
   people's model adds 1.5 points [0.0, 3.0] over using the new
   person's 2 seconds per gesture alone.
+- **It can say when it isn't sure.** Instead of one gesture it can give a
+  set that should hold the right one 90% of the time. Across 91 later days
+  the sets deliver 89.1% [88.7, 89.4], and when a set has a single gesture
+  it is right 97.0% of the time. I haven't found this done for EMG before;
+  [how it works](https://ethsanders.github.io/myobridge/conformal/).
 - **A loose electrode is easy to catch.** The monitor notices within about
   a second and switches to a model without that electrode, computed
   instantly from the full one.
@@ -97,8 +102,9 @@ an hour); a test checks that the numbers in the docs match the output.
   queue hands packets to the WiFi sender, so a slow send never disturbs the
   sample clock. Packets carry a sequence number and a CRC-16.
 - `myobridge`, the Python package: streaming filters, 15 features per
-  electrode, linear discriminant analysis with one-step recalibration, a
-  signal-quality monitor, replay of recorded data, and output as UDP JSON
+  electrode, linear discriminant analysis with one-step recalibration,
+  gesture sets with a coverage promise, a signal-quality monitor, replay
+  of recorded data, and output as UDP JSON
   or [Lab Streaming Layer](https://labstreaminglayer.org).
 - `myobridge.bench`: the experiments behind every number, on dataset
   versions pinned to a commit.

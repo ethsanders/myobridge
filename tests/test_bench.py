@@ -165,3 +165,50 @@ def test_thresholds_ignore_test_data(data):
     assert np.array_equal(before, after)
     both = p.table(p.indices([1]), train_idx)
     assert np.array_equal(both.where(sessions=[threedc_bench.TRAIN]).X, before)
+
+
+def test_conformal_quick(data, tmp_path):
+    from myobridge.bench import conformal_bench as cb
+
+    out = bench.EXPERIMENTS["conformal"](opts(data, tmp_path))
+    rows = out["multiday"]["rows"]
+    assert set(rows) == {
+        "static_training_days",
+        "static_validation_days",
+        "adapt_validation_days",
+        "adapt_same_day",
+        "adapt_blocked_cross",
+        "adapt_aci",
+        "static_temp_aps",
+        "adapt_temp_aps",
+        "adapt_temp_aps_mondrian",
+        "adapt_temp_aps_swapped",
+        "adapt_temp_lac",
+    }
+    test_days = multiday_bench.TEST_DAYS[:6]
+    assert out["multiday"]["test_days"] == test_days
+    # the temperature and threshold days are disjoint and both before the test days
+    t_days, q_days = out["multiday"]["temperature_days"], out["multiday"]["threshold_days"]
+    assert t_days and q_days and not set(t_days) & set(q_days)
+    assert max(t_days + q_days) < min(test_days)
+    row = rows["adapt_temp_aps"]
+    for a in cb.ALPHAS:
+        r = row[str(a)]
+        assert r["target"] == pytest.approx(1 - a)
+        assert set(r["per_group"]) == {str(d) for d in test_days}
+        assert 0.0 <= r["coverage"]["mean"] <= 1.0
+        assert len(r["coverage_by_gesture"]) == 11
+        assert sum(b["n_windows"] for b in r["by_time_into_hold"].values()) > 0
+    spread = out["multiday"]["seed_spread_adapt_temp_aps"]
+    assert spread["seeds"] == cb.SEEDS
+    assert spread["by_alpha"]["0.1"]["coverage"]["n"] == len(cb.SEEDS)
+    tail = out["multiday"]["without_last_second_of_hold"]
+    assert 0.0 < tail["share_of_test_windows_dropped"] < 1.0
+    assert set(tail["rows"]["adapt_temp_aps"]["0.1"]["per_group"]) == {str(d) for d in test_days}
+    within = out["threedc"]["within_sitting"]
+    assert within["rows"]["temp_aps"]["0.1"]["coverage"]["n"] == 2  # persons 7 and 8
+    assert out["threedc"]["cross_person"]["adapt"]["rows"]["lac"]["0.1"]["coverage"]["n"] == 2
+    flt = out["threedc"]["faults"]["results"]["lead_off"]
+    assert set(flt) == {"clean", "no_monitor", "monitor", "oracle_drop"}
+    saved = json.loads((tmp_path / "results" / "conformal.quick.json").read_text())
+    assert saved["datasets"]["3dc"]["commit"] == out["datasets"]["3dc"]["commit"]

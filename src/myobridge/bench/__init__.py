@@ -10,7 +10,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from . import aliasing_bench, latency_bench, multiday_bench, quality_bench, threedc_bench
+from . import (
+    aliasing_bench,
+    conformal_bench,
+    latency_bench,
+    multiday_bench,
+    quality_bench,
+    threedc_bench,
+)
 from .common import RunOptions
 
 EXPERIMENTS: dict[str, Callable[[RunOptions], dict[str, Any]]] = {
@@ -19,6 +26,7 @@ EXPERIMENTS: dict[str, Callable[[RunOptions], dict[str, Any]]] = {
     "aliasing": aliasing_bench.run,
     "quality": quality_bench.run,
     "latency": latency_bench.run,
+    "conformal": conformal_bench.run,
 }
 
 __all__ = ["EXPERIMENTS", "RunOptions", "run"]

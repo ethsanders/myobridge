@@ -8,6 +8,16 @@ All notable changes to myobridge. The format follows
 
 ### Added
 
+- `myobridge.conformal`: gesture *sets* with a coverage promise ("one of
+  these, 90% of the time"), so an application can tell a sure decision from
+  a guess. `ConformalGestures.calibrate()`, `fit_temperature()`,
+  `blocked_scores()`, `set_metrics()` and `AdaptiveAlpha`.
+  `GesturePipeline(conformal=...)` adds the set to every `Prediction`
+  (`prediction.gesture_set`, `prediction.sure`), and keeps working when the
+  monitor drops a channel.
+- `myobridge bench conformal`: whether that promise holds across 91 later
+  days (MultiDay), a 5 minute break and new people (3DC), and electrode
+  faults, with a recipe that does.
 - A richer default feature set, `td-ar-psd`: the Hudgins time-domain
   features plus 4th-order autoregressive coefficients and the TD-PSD
   spectral moments, 15 per channel. The old 5-feature set is still
@@ -48,6 +58,10 @@ All notable changes to myobridge. The format follows
 
 ### Fixed
 
+- The 3DC citation now points to the paper that introduced the dataset
+  (Côté-Allard et al., *Sensors* 2019). The docs credit Vidovic et al.
+  (2016) for the method behind `adapt()` and Zhang & Huang (2015) for
+  `subset()`.
 - Packets are validated field by field when encoded and decoded.
 - A device restart is told apart from a late packet by its timestamp, and
   duplicates are counted.

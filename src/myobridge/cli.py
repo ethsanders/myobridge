@@ -690,7 +690,9 @@ def build_parser() -> argparse.ArgumentParser:
         "bench", "run the benchmarks on real EMG and write results/", cmd_bench, uses_mains=False
     )
     s.add_argument(
-        "names", nargs="*", help="multiday threedc aliasing quality latency (default: all)"
+        "names",
+        nargs="*",
+        help="multiday threedc aliasing quality latency conformal (default: all)",
     )
     s.add_argument("--data", help="folder for datasets (default: $MYOBRIDGE_DATA)")
     s.add_argument("--out", default="results", help="where to write the JSON results")

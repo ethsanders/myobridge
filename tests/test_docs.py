@@ -138,6 +138,54 @@ def test_quality_defaults_match_benchmark() -> None:
     assert_quoted(table, *(f"{value:.3f}" for value in chosen.values()))
 
 
+CONFORMAL_MD = "docs/conformal.md"
+
+
+def test_conformal() -> None:
+    d = _load("conformal")
+    md = d["multiday"]["rows"]
+    head = md["adapt_temp_aps"]["0.1"]
+    textbook = md["static_validation_days"]["0.1"]
+    for doc in (README, RESULTS_MD, CONFORMAL_MD):
+        assert_quoted(_text(doc), pct(head["coverage"]["mean"]), ci(head["coverage"]))
+    assert_quoted(_text(README), pct(head["accuracy_when_singleton"]))
+    for doc in (RESULTS_MD, CONFORMAL_MD):
+        assert_quoted(_text(doc), pct(textbook["coverage"]["mean"]), ci(textbook["coverage"]))
+    page = _text(CONFORMAL_MD)
+    for a in ("0.05", "0.1", "0.2"):
+        r = md["adapt_temp_aps"][a]
+        assert_quoted(
+            page,
+            f"{pct(r['coverage']['mean'])} {ci(r['coverage'])}",
+            f"{r['mean_set_size']:.2f}",
+            pct(r["singleton_rate"]),
+            pct(r["accuracy_when_singleton"]),
+        )
+    assert_quoted(page, pct(md["adapt_validation_days"]["0.1"]["coverage"]["mean"]))
+    assert_quoted(page, pct(md["static_temp_aps"]["0.1"]["coverage"]["mean"]))
+    within = d["threedc"]["within_sitting"]["rows"]["temp_aps"]["0.1"]
+    cross = d["threedc"]["cross_person"]["adapt"]["rows"]["temp_aps"]["0.1"]
+    lead = d["threedc"]["faults"]["results"]["lead_off"]
+    for doc in (RESULTS_MD, CONFORMAL_MD):
+        text = _text(doc)
+        for r in (within, cross, lead["monitor"]["0.1"], lead["no_monitor"]["0.1"]):
+            assert_quoted(text, pct(r["coverage"]["mean"]), ci(r["coverage"]))
+    tail = d["multiday"]["without_last_second_of_hold"]
+    for doc in (RESULTS_MD, CONFORMAL_MD):
+        assert_quoted(
+            _text(doc),
+            pct(tail["share_of_test_windows_dropped"]),
+            pct(tail["accuracy"]["adapted"]),
+        )
+    assert_quoted(
+        page,
+        pct(tail["rows"]["adapt_temp_aps"]["0.1"]["coverage"]["mean"]),
+        pct(tail["rows"]["adapt_temp_aps_all_trimmed"]["0.1"]["coverage"]["mean"]),
+    )
+    seeds = d["multiday"]["seed_spread_adapt_temp_aps"]["by_alpha"]["0.1"]["coverage"]
+    assert_quoted(page, f"{pct(seeds['min'])} to {pct(seeds['max'])}")
+
+
 def test_readme_example_runs() -> None:
     """The quick-start code in the README is real code."""
     text = _text(README)

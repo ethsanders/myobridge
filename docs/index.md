@@ -47,6 +47,9 @@ quality monitor drops it and the decoder keeps going on the other three.*
   voting.
 - **Recalibration** with `adapt()`: one second per gesture from a new day
   recovers most of what a model loses to drift.
+- **Knowing when it doesn't know**: gesture sets that hold the right
+  gesture a promised share of the time, and keep that promise across days
+  after recalibration ([details](conformal.md)).
 - **A signal-quality monitor** that spots a lifted or clipping electrode
   within about a second and switches to a model without it.
 - **Benchmarks** on two public datasets, with splits by recording, day and

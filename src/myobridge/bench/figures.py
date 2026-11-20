@@ -366,11 +366,89 @@ def quality(results: Path, out: Path) -> Path | None:
     return path
 
 
+CONFORMAL_ROWS = {
+    "static_validation_days": (INK2, "textbook: old model, threshold from days 11-30"),
+    "adapt_validation_days": (ORANGE, "adapted each day, same threshold"),
+    "adapt_temp_aps": (BLUE, "myobridge: adapted + temperature + APS"),
+}
+
+
+def conformal(results: Path, out: Path) -> Path | None:
+    r = _load(results, "conformal")
+    if r is None:
+        return None
+    plt = _plt()
+    md = r["multiday"]
+    fig, (a, b) = plt.subplots(1, 2, figsize=(10, 3.8), gridspec_kw={"width_ratios": [1.3, 1]})
+
+    for name, (color, label) in CONFORMAL_ROWS.items():
+        per_day = md["rows"][name]["0.1"]["per_group"]
+        days = [int(d) for d in per_day]
+        cov = [per_day[d]["coverage"] for d in per_day]
+        a.plot(days, cov, color=color, label=label, linewidth=1.5)
+    a.axhline(0.9, color=INK, linestyle="--", linewidth=1)
+    a.annotate(
+        "promised: 90%",
+        (days[0], 0.9),
+        xytext=(0, 4),
+        textcoords="offset points",
+        fontsize=8,
+        color=INK,
+    )
+    a.set_xlabel("test day (MultiDay)")
+    a.set_ylabel("how often the true gesture is in the set")
+    a.set_title("A 90% promise, checked on every later day")
+    a.set_ylim(0.4, 1.0)
+    a.legend(fontsize=8, loc="lower left")
+    _pct(a)
+
+    alphas = [x for x in md["rows"]["adapt_temp_aps"] if x[0].isdigit()]
+    promised = [1 - float(x) for x in alphas]
+    b.plot([0.75, 1.0], [0.75, 1.0], color=INK2, linestyle="--", linewidth=1)
+    series = [
+        ("MultiDay, days 31-121", BLUE, [md["rows"]["adapt_temp_aps"][x] for x in alphas]),
+        (
+            "3DC, after the break",
+            AQUA,
+            [r["threedc"]["within_sitting"]["rows"]["temp_aps"][x] for x in alphas],
+        ),
+        (
+            "MultiDay, textbook",
+            INK2,
+            [md["rows"]["static_validation_days"][x] for x in alphas],
+        ),
+    ]
+    for label, color, rows in series:
+        b.plot(
+            promised,
+            [row["coverage"]["mean"] for row in rows],
+            color=color,
+            marker="o",
+            markersize=6,
+            label=label,
+        )
+    b.set_xlabel("promised coverage")
+    b.set_ylabel("delivered coverage")
+    b.set_title("Promised vs delivered")
+    b.set_xticks(promised)
+    b.set_xlim(0.75, 1.0)
+    b.set_ylim(0.55, 1.0)
+    b.xaxis.set_major_formatter(lambda v, _: f"{v:.0%}")
+    b.legend(fontsize=8, loc="lower right")
+    _pct(b)
+    fig.tight_layout()
+    path = out / "conformal.png"
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
+
+
 def make_all(results: Path, out: Path) -> list[Path]:
     out.mkdir(parents=True, exist_ok=True)
     paths: list[Path | None] = [
         multiday(results, out),
         aliasing(results, out),
         quality(results, out),
+        conformal(results, out),
     ]
     return [p for p in [*paths, *threedc(results, out)] if p is not None]

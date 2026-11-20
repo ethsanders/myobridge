@@ -111,3 +111,31 @@ def test_empty_and_misshapen_blocks():
     for bad in (np.zeros((20, 3)), np.zeros(20)):
         with pytest.raises(ValueError, match=r"\(n, 4\)"):
             pipe.process_block(bad)
+
+
+def test_pipeline_reports_conformal_sets():
+    from myobridge.classifier import recording_to_features
+    from myobridge.conformal import ConformalGestures
+    from myobridge.simulator import GESTURES
+
+    sim, plain = _trained_pipeline()
+    model = plain.model
+    # calibration data the model never saw: a fresh recording of every gesture
+    X, y = [], []
+    for g in GESTURES:
+        feats = recording_to_features(sim.record(g, 2.0), 1000, feature_set=model.feature_set)
+        X.append(feats)
+        y += [g] * len(feats)
+    cg = ConformalGestures.calibrate(model, np.vstack(X), y, alpha=0.1)
+    pipe = GesturePipeline(model, fs=1000, n_channels=4, conformal=cg)
+    raw = sim.record("fist", 3.0)
+    preds = [p for block in np.split(raw, 60) for p in pipe.process_block(block)]
+    assert preds and all(p.gesture_set is not None for p in preds)
+    assert all(set(p.gesture_set) <= set(GESTURES) for p in preds)
+    late = [p for p in preds if p.sample_index > 1000]
+    assert np.mean(["fist" in p.gesture_set for p in late]) > 0.8
+    assert any(p.sure for p in late)
+    for p in late:
+        if p.sure:
+            assert p.gesture_set == (p.raw_gesture,)
+    assert all(p.gesture_set is None and not p.sure for p in plain.process_block(raw[:500]))

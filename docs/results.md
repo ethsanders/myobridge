@@ -139,7 +139,9 @@ Four ways to use it:
 - `pooled`: retrain on days 1-10 plus the new data
 - `adapt`: `myobridge.classifier.adapt`, which pulls each class mean toward
   the new data's mean and blends in some of its covariance, with two
-  settings chosen on days 11-30
+  settings chosen on days 11-30. This is the supervised adaptation of
+  Vidovic et al. (*IEEE TNSRE* 24(9):961-970, 2016); myobridge only states
+  the mean's weight as a number of windows
 
 | New data per gesture | none | new_only | pooled | **adapt** | adapt − next best |
 |---|---|---|---|---|---|
@@ -161,6 +163,11 @@ test day itself, with no older data, scores 87.9%.
 - `adapt` keeps the old covariance, which electrode shifts change little, and
   moves the means, which they change a lot. It wins at every length, and with
   1 s per gesture it beats a same-day model trained on more data.
+
+**Where the errors are.** Most of the adapted model's mistakes come at the
+end of a hold. The last second of each hold is 26.8% of the test windows;
+without it, the adapted model scores 96.7% and the base model 77.4%. The
+headline numbers keep those windows, because a live user's holds end too.
 
 ## 5. A new person (3DC)
 
@@ -226,7 +233,30 @@ That policy was chosen after a first run; signal-quality.md reports both.
 
 ![Fault detection and fault tolerance](figures/quality.png)
 
-## 8. Speed
+## 8. Knowing when it doesn't know (MultiDay, 3DC)
+
+Summarised here, in full in [conformal.md](conformal.md). Instead of one
+gesture, the decoder gives a set that should hold the true gesture 90% of the
+time. The question is whether that promise survives new days, a break, new
+people and broken electrodes. Thresholds are always set on held-out days or
+people.
+
+| At a 90% promise | Delivered | Gestures per set | Right when the set has one |
+|---|---|---|---|
+| MultiDay days 31-121, textbook threshold, old model | 74.6% [73.0, 76.2] | 1.03 | 74.4% |
+| ... adapted each day, recipe (temperature + APS) | 89.1% [88.7, 89.4] | 1.43 | 97.0% |
+| 3DC after the break, recipe | 89.6% [87.4, 91.1] | 1.27 | 97.3% |
+| 3DC new person, 2 s per gesture, recipe | 89.3% [85.4, 92.4] | 2.18 | 91.0% |
+| 3DC electrode off, with the quality monitor | 89.5% [88.5, 90.4] | 1.34 | 96.7% |
+| ... without the monitor | 22.8% [19.7, 25.9] | 1.06 | 24.5% |
+
+**Reading:** the textbook calibration breaks as soon as the armband is put
+back on. Recalibrating with `adapt()`, softening the LDA's probabilities with
+one temperature and using the APS score keeps the promise on all 91 test
+days, within 5 points on every one. A broken electrode breaks it again,
+silently, which is why the quality monitor runs first.
+
+## 9. Speed
 
 Measured by `myobridge bench latency` on the machine that produced the
 results file (its CPU is recorded there), with the live code path: 4
