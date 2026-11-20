@@ -80,3 +80,53 @@ def test_envelope_tracks_amplitude():
     loud = rng.normal(0, 200, (2000, 1))
     env = EmgFilter(FS, 1).process(np.vstack([quiet, loud])).envelope[:, 0]
     assert env[3500:].mean() > 10 * env[1000:2000].mean()
+
+
+def test_empty_block_gives_empty_outputs_and_keeps_state():
+    x = random_signal(n=200)
+    reference = EmgFilter(FS, 3).process(x)
+    f = EmgFilter(FS, 3)
+    first = f.process(x[:100])
+    empty = f.process(np.zeros((0, 3)))
+    second = f.process(x[100:])
+    assert empty.clean.shape == empty.envelope.shape == (0, 3)
+    np.testing.assert_allclose(np.vstack([first.clean, second.clean]), reference.clean)
+    np.testing.assert_allclose(np.vstack([first.envelope, second.envelope]), reference.envelope)
+
+
+@pytest.mark.parametrize("window", [1, 4])
+def test_moving_rms_empty_block(window):
+    assert MovingRMS(window, 2).process(np.zeros((0, 2))).shape == (0, 2)
+
+
+def test_channel_count_change_is_a_clear_error():
+    f = EmgFilter(FS, 4)
+    f.process(np.zeros((20, 4)))
+    with pytest.raises(ValueError, match="channel count"):
+        f.process(np.zeros((20, 3)))
+
+
+@pytest.mark.parametrize("fs", [250, 500, 800])
+def test_slow_devices_get_a_capped_band(fs):
+    f = EmgFilter(fs, 2)
+    assert f.band == (20.0, 0.45 * fs)
+    out = f.process(random_signal(n=2 * fs, channels=2))
+    assert np.all(np.isfinite(out.clean)) and out.envelope.shape == (2 * fs, 2)
+
+
+def test_band_is_unchanged_when_it_fits():
+    assert EmgFilter(FS, 1).band == (20.0, 450.0)
+    assert EmgFilter(2048, 1, band=(10.0, 500.0)).band == (10.0, 500.0)
+
+
+@pytest.mark.parametrize(
+    ("fs", "kwargs", "message"),
+    [
+        (0, {}, "fs must be > 0"),
+        (100, {}, "mains_hz 60 must be below Nyquist"),
+        (40, {"mains_hz": 10.0}, "leaves nothing below"),
+    ],
+)
+def test_impossible_settings_are_clear_errors(fs, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        EmgFilter(fs, 1, **kwargs)

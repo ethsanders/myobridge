@@ -41,6 +41,9 @@ class MovingRMS:
         self.history = np.zeros((window - 1, n_channels))
 
     def process(self, x: np.ndarray) -> np.ndarray:
+        """RMS for each sample of an (n_samples, n_channels) block."""
+        if len(x) == 0:
+            return np.zeros((0, self.history.shape[1]))
         squared = np.vstack([self.history, x**2])
         # Running sum trick: mean over each length-`window` slice in O(n).
         csum = np.cumsum(squared, axis=0)
@@ -75,7 +78,11 @@ class FilterOutput:
 
 
 class EmgFilter:
-    """The full conditioning chain for one multi-channel stream."""
+    """The full conditioning chain for one multi-channel stream.
+
+    The band's high corner is capped at 0.45 * fs so that slower devices still
+    work (a 450 Hz corner needs fs > 900 Hz); `band` holds the band in use.
+    """
 
     def __init__(
         self,
@@ -85,12 +92,30 @@ class EmgFilter:
         mains_hz: float = 60.0,
         rms_window_s: float = 0.1,
     ):
-        self.bandpass = StreamingSOS(design_bandpass(fs, *band), n_channels)
+        if not fs > 0:
+            raise ValueError(f"fs must be > 0, got {fs}")
+        if n_channels < 1:
+            raise ValueError(f"n_channels must be >= 1, got {n_channels}")
+        if not 0 < mains_hz < fs / 2:
+            raise ValueError(f"mains_hz {mains_hz:g} must be below Nyquist ({fs / 2:g} Hz)")
+        low, high = band[0], min(band[1], 0.45 * fs)
+        if not 0 < low < high:
+            raise ValueError(f"band {band} leaves nothing below 0.45 * fs = {0.45 * fs:g} Hz")
+        self.fs, self.n_channels, self.band = fs, n_channels, (low, high)
+        self.bandpass = StreamingSOS(design_bandpass(fs, low, high), n_channels)
         self.notch = StreamingSOS(design_notch(fs, mains_hz), n_channels)
         self.rms = MovingRMS(max(1, int(round(rms_window_s * fs))), n_channels)
 
     def process(self, raw: np.ndarray) -> FilterOutput:
+        """Filter an (n_samples, n_channels) block; an empty block gives empty outputs."""
         x = np.asarray(raw, dtype=np.float64)
+        if x.ndim != 2 or x.shape[1] != self.n_channels:
+            raise ValueError(
+                f"expected blocks of shape (n_samples, {self.n_channels}), got {x.shape}; "
+                "the channel count can't change mid-stream"
+            )
+        if len(x) == 0:
+            return FilterOutput(clean=x.copy(), envelope=x.copy())
         clean = self.notch.process(self.bandpass.process(x))
         # Full-wave rectification. (RMS squares anyway, so the sign would vanish
         # regardless, but rectified EMG is the textbook intermediate signal.)
