@@ -121,10 +121,15 @@ Every packet carries a 32-bit counter. The receiver remembers the next number
 it expects and computes `ahead = (seq − expected) mod 2³²`:
 - `0`: on time.
 - small positive: a gap; that many packets were lost.
-- "negative" (≥ 2³¹ after the modulo) by a little: a late or duplicate packet.
+- "negative" (≥ 2³¹ after the modulo) by a little (up to 32): a late packet.
   We had counted it as dropped, so undo that, count it as reordered, and throw
-  it away (filters can't rewind).
-- negative by a lot (>1000): the device rebooted and restarted at 0, so resync.
+  it away (filters can't rewind). A seq we already saw is a duplicate instead,
+  and doesn't touch the drop count.
+- negative by a lot: the device rebooted and restarted at 0, so resync.
+
+The device timestamp settles the cases the counter can't: a reboot resets the
+clock too, so a repeated seq with a new timestamp, or a "late" packet that is
+out of place in time, is a reboot even when seq only went back a little.
 
 The modulo makes wraparound free: after 4294967295 comes 0, and
 `(0 − 4294967295) mod 2³² = 1`, i.e. "the next one". (At 50 packets/s a u32

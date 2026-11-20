@@ -156,9 +156,10 @@ def decode_packet(data: bytes) -> Packet:
 class LinkStats:
     received: int = 0  # valid packets accepted in order
     dropped: int = 0  # packets that never arrived (gaps in seq)
-    corrupt: int = 0  # bad magic / CRC / length / version
-    reordered: int = 0  # arrived late (or duplicated) and were discarded
-    restarts: int = 0  # device rebooted (seq jumped far backwards)
+    corrupt: int = 0  # bad magic / CRC / length / version / header fields
+    reordered: int = 0  # arrived late and were discarded
+    restarts: int = 0  # device rebooted (seq or its clock jumped backwards)
+    duplicates: int = 0  # second copies of a packet, discarded
 
     @property
     def loss_percent(self) -> float:
@@ -168,41 +169,111 @@ class LinkStats:
 
 @dataclass
 class SequenceTracker:
-    """Detects gaps and out-of-order packets using the 32-bit sequence number.
+    """Detects gaps, late packets, duplicates and device restarts.
 
-    All arithmetic is modulo 2**32 so that seq 0 right after 4294967295 is just
-    "the next packet", not a jump backwards.
+    Sequence arithmetic is modulo 2**32 so that seq 0 right after 4294967295 is
+    just "the next packet", not a jump backwards.
+
+    A packet up to `restart_window` behind is late or a duplicate, unless its
+    `timestamp_us` (device time) says otherwise: a reboot resets the device
+    clock along with seq, so a repeated seq with a different timestamp, a late
+    packet that doesn't fit in time between its neighbours, or a newer seq
+    with an older timestamp all mean the device restarted. Without timestamps
+    only the seq distance is used.
     """
 
-    restart_window: int = 1000  # a jump back further than this = device reboot
+    restart_window: int = 32  # a jump back further than this = device reboot
     stats: LinkStats = field(default_factory=LinkStats)
     expected: int | None = None
+    _covered: int = field(default=0, init=False, repr=False)  # seqs since the (re)start
+    _newest_us: int | None = field(default=None, init=False, repr=False)
+    # seq -> timestamp_us of the packets seen within restart_window of `expected`
+    _seen: dict[int, int | None] = field(default_factory=dict, init=False, repr=False)
 
-    def accept(self, seq: int) -> bool:
+    def accept(self, seq: int, timestamp_us: int | None = None) -> bool:
         """Update stats for `seq`. Returns True if the packet should be used."""
+        seq %= SEQ_MODULO
         if self.expected is None:  # very first packet
-            self.expected = (seq + 1) % SEQ_MODULO
-            self.stats.received += 1
+            self._resync(seq, timestamp_us)
             return True
 
         ahead = (seq - self.expected) % SEQ_MODULO  # how far ahead of what we wanted
         if ahead < SEQ_MODULO // 2:
+            if _earlier(timestamp_us, self._newest_us):
+                self._restart(seq, timestamp_us)
+                return True
             # On time (ahead == 0) or after a gap: everything in between was lost.
             self.stats.dropped += ahead
             self.stats.received += 1
-            self.expected = (seq + 1) % SEQ_MODULO
+            self._covered += ahead + 1
+            self._advance(seq, timestamp_us)
             return True
 
         behind = SEQ_MODULO - ahead  # 1 means "the packet just before expected"
         if behind > self.restart_window:
-            # Too far back to be a late packet: the device restarted at seq 0.
-            self.stats.restarts += 1
-            self.stats.received += 1
-            self.expected = (seq + 1) % SEQ_MODULO
+            # Too far back to be a late packet: the device restarted.
+            self._restart(seq, timestamp_us)
             return True
 
-        # A late packet. We already counted it as dropped when we saw the gap,
-        # so undo that. Streaming filters can't go back in time: discard it.
+        if seq in self._seen:
+            seen_us = self._seen[seq]
+            if seen_us is not None and timestamp_us is not None and seen_us != timestamp_us:
+                self._restart(seq, timestamp_us)
+                return True
+            self.stats.duplicates += 1
+            return False
+
+        if not self._fits_in_time(behind, timestamp_us):
+            self._restart(seq, timestamp_us)
+            return True
+
+        # A late packet. If it falls in a gap we counted as dropped, undo that.
+        # Streaming filters can't go back in time, so it is discarded.
         self.stats.reordered += 1
-        self.stats.dropped = max(0, self.stats.dropped - 1)
+        if behind <= self._covered:
+            self.stats.dropped -= 1
+        self._seen[seq] = timestamp_us
         return False
+
+    def _resync(self, seq: int, timestamp_us: int | None) -> None:
+        self.stats.received += 1
+        self._covered = 1
+        self._seen.clear()
+        self._newest_us = None
+        self._advance(seq, timestamp_us)
+
+    def _restart(self, seq: int, timestamp_us: int | None) -> None:
+        self.stats.restarts += 1
+        self._resync(seq, timestamp_us)
+
+    def _advance(self, seq: int, timestamp_us: int | None) -> None:
+        expected = (seq + 1) % SEQ_MODULO
+        self.expected = expected
+        self._seen[seq] = timestamp_us
+        if timestamp_us is not None:
+            self._newest_us = timestamp_us
+        for old in [s for s in self._seen if (expected - s) % SEQ_MODULO > self.restart_window]:
+            del self._seen[old]
+
+    def _fits_in_time(self, behind: int, timestamp_us: int | None) -> bool:
+        """True if a packet `behind` seqs back lies in time between the seen
+        packets on either side of it."""
+        if timestamp_us is None or self.expected is None:
+            return True
+        newer: tuple[int, int] | None = None  # (behind, timestamp_us) of the closest newer
+        older: tuple[int, int] | None = None
+        for s, us in self._seen.items():
+            if us is None:
+                continue
+            b = (self.expected - s) % SEQ_MODULO
+            if b < behind and (newer is None or b > newer[0]):
+                newer = (b, us)
+            elif b > behind and (older is None or b < older[0]):
+                older = (b, us)
+        return (newer is None or timestamp_us < newer[1]) and (
+            older is None or timestamp_us > older[1]
+        )
+
+
+def _earlier(timestamp_us: int | None, reference_us: int | None) -> bool:
+    return timestamp_us is not None and reference_us is not None and timestamp_us < reference_us

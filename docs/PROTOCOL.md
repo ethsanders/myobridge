@@ -42,8 +42,12 @@ A datagram is rejected (counted as `corrupt`) if:
 1. it is shorter than header + CRC (`truncated`),
 2. `magic` is not `"MB"` (`magic`),
 3. `version` is unknown (`version`),
-4. its length is not exactly `20 + 2·n_channels·n_frames + 2` (`truncated`),
-5. the CRC doesn't match (`crc`).
+4. the header asks for more than fits in one datagram (65507 bytes) (`format`),
+5. its length is not exactly `20 + 2·n_channels·n_frames + 2` (`truncated`),
+6. the CRC doesn't match (`crc`),
+7. `n_channels` or `sample_rate` is 0 (`format`).
+
+`n_frames = 0` is valid: the packet just carries no samples.
 
 Valid packets go through the sequence tracker. With `expected` = last
 accepted `seq` + 1, and all arithmetic modulo 2³²:
@@ -52,8 +56,15 @@ accepted `seq` + 1, and all arithmetic modulo 2³²:
 |---|---|---|
 | `0` | in order | accept |
 | `1 … 2³¹-1` | gap: `ahead` packets missing | `dropped += ahead`, accept |
-| `2³²-1000 … 2³²-1` (up to 1000 behind) | late or duplicate | `reordered += 1`, `dropped -= 1`, **discard** |
-| further behind | device restarted at 0 | `restarts += 1`, accept, resync |
+| `2³²-32 … 2³²-1` (up to 32 behind), seq already seen | duplicate | `duplicates += 1`, **discard** |
+| `2³²-32 … 2³²-1`, seq not seen | late | `reordered += 1`, `dropped -= 1`, **discard** |
+| further behind | device restarted | `restarts += 1`, accept, resync |
+
+A reboot resets the device clock along with `seq`, so `timestamp_us` overrides
+the table: a packet is also a restart when its `seq` was already seen with a
+different timestamp, when a "late" packet's timestamp doesn't lie between
+those of the packets either side of it, or when a newer `seq` carries an
+older timestamp than the last packet.
 
 Late packets are discarded because the streaming filters can't go back in
 time; inserting an old block would corrupt their state.

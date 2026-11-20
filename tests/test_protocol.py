@@ -202,3 +202,80 @@ def test_decode_rejects_unusable_headers(n_channels, sample_rate, n_frames):
 def test_zero_frame_packet_is_valid():
     pkt = decode_packet(encode_packet(np.zeros((0, 4), dtype=np.int16), 3, 0, 1000))
     assert pkt.samples.shape == (0, 4)
+
+
+def test_tracker_duplicate_is_not_a_drop():
+    t = SequenceTracker()
+    for s in [0, 2]:
+        assert t.accept(s, s * 20_000)
+    assert not t.accept(2, 40_000)
+    assert (t.stats.received, t.stats.dropped, t.stats.duplicates, t.stats.reordered) == (
+        2,
+        1,
+        1,
+        0,
+    )
+
+
+def test_tracker_duplicate_without_timestamps():
+    t = SequenceTracker()
+    for s in [0, 1, 2]:
+        t.accept(s)
+    assert not t.accept(1)
+    assert (t.stats.dropped, t.stats.duplicates) == (0, 1)
+
+
+def test_tracker_duplicate_of_a_late_packet():
+    t = SequenceTracker()
+    for s in [0, 1, 3]:
+        t.accept(s, s * 20_000)
+    assert not t.accept(2, 40_000)
+    assert not t.accept(2, 40_000)
+    assert (t.stats.dropped, t.stats.reordered, t.stats.duplicates) == (0, 1, 1)
+
+
+def test_tracker_late_packet_from_before_the_first_one_is_not_undropped():
+    t = SequenceTracker()
+    t.accept(100, 2_000_000)
+    assert not t.accept(99, 1_980_000)  # sent before we started listening
+    assert (t.stats.dropped, t.stats.reordered) == (0, 1)
+
+
+def boot(t, n, start_us, first_seq=0):
+    """Feed `n` packets of a device that booted `start_us` before its first packet."""
+    return [t.accept(first_seq + i, start_us + 20_000 * i) for i in range(n)]
+
+
+def test_tracker_reboot_after_a_few_hundred_packets():
+    t = SequenceTracker()
+    boot(t, 500, 3_000_000)  # 10 s of streaming, then a reboot
+    assert all(boot(t, 600, 2_500_000))
+    assert t.stats.restarts == 1
+    assert (t.stats.dropped, t.stats.reordered) == (0, 0)
+
+
+@pytest.mark.parametrize("second_boot_us", [2_000_000, 3_000_000 + 5_000, 9_000_000])
+def test_tracker_reboot_within_the_reorder_window(second_boot_us):
+    t = SequenceTracker()
+    boot(t, 10, 3_000_000)  # a reboot just 200 ms after streaming started
+    assert all(boot(t, 40, second_boot_us))
+    assert t.stats.restarts == 1
+    assert (t.stats.dropped, t.stats.reordered, t.stats.duplicates) == (0, 0, 0)
+
+
+def test_tracker_reboot_with_the_first_packets_lost():
+    t = SequenceTracker()
+    boot(t, 10, 3_000_000)
+    # The new boot's seq 0..2 are lost; seq 3 is "on time" but its clock went back.
+    assert all(t.accept(s, 2_000_000 + 20_000 * s) for s in range(3, 20))
+    assert t.stats.restarts == 1
+    assert t.stats.dropped == 0
+
+
+def test_tracker_late_packet_must_fit_in_time():
+    t = SequenceTracker()
+    for s in [0, 1, 3]:
+        t.accept(s, 1_000_000 + 20_000 * s)
+    # seq 2 with a timestamp after seq 3's can't be a late packet
+    assert t.accept(2, 5_000_000)
+    assert t.stats.restarts == 1

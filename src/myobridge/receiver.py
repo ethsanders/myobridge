@@ -43,7 +43,7 @@ class Receiver:
             self.stats.corrupt += 1
             self.last_error = f"{err.kind}: {err}"
             return None
-        return packet if self.tracker.accept(packet.seq) else None
+        return packet if self.tracker.accept(packet.seq, packet.timestamp_us) else None
 
     def receive(self) -> Packet | None:
         """Wait up to the timeout for one usable packet. None on timeout/bad packet."""
