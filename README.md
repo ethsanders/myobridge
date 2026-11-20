@@ -57,8 +57,19 @@ myobridge calibrate --out model.npz   # hold each gesture when asked
 myobridge forward --model model.npz   # gestures out as JSON over UDP
 ```
 
+To get your own 90% promise, record a session on each of three days, fit,
+then run the sets on any later day:
+
+```bash
+myobridge calibrate --out day1-model.npz --session day1.npz   # also day2, day3
+myobridge fit day1.npz day2.npz day3.npz --out model.npz
+myobridge sets --model model.npz --prompt --web   # scored live, large type in a browser
+```
+
 [Getting started](https://ethsanders.github.io/myobridge/getting-started/)
-goes further, including decoding a real person from a public dataset.
+goes further, including decoding a real person from a public dataset, and
+[your own 90% promise](https://ethsanders.github.io/myobridge/your-promise/)
+walks through the three commands above.
 
 ## How well it works
 

@@ -36,6 +36,7 @@ from .protocol import Packet, decode_packet, encode_packet
 from .quality import Issue, QualityConfig, QualityMonitor, QualityReport
 from .receiver import Receiver
 from .replay import Replay
+from .sessions import Session, fit_sets, recalibrate
 from .simulator import EmgSimulator
 
 __version__ = "0.2.0"
@@ -59,6 +60,7 @@ __all__ = [
     "QualityReport",
     "Receiver",
     "Replay",
+    "Session",
     "TrainingSettings",
     "__version__",
     "adapt",
@@ -67,5 +69,7 @@ __all__ = [
     "encode_packet",
     "extract_features",
     "feature_names",
+    "fit_sets",
+    "recalibrate",
     "recording_to_features",
 ]

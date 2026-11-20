@@ -8,6 +8,14 @@ All notable changes to myobridge. The format follows
 
 ### Added
 
+- The recipe on your own armband. `myobridge calibrate --session day1.npz`
+  keeps the raw recordings. `myobridge fit day1.npz day2.npz day3.npz` trains
+  on the early sessions and fits the temperature and threshold on the later
+  ones. `myobridge sets` recalibrates for today with 2 s per gesture and shows
+  live sets; `--prompt` asks for gestures and scores the sets against the
+  promise, and `--web` shows it all in large type in a browser. In code:
+  `Session`, `fit_sets()`, `recalibrate()` and `myobridge.live_sets`. Guide:
+  "Your own 90% promise".
 - `myobridge.conformal`: gesture *sets* with a coverage promise ("one of
   these, 90% of the time"), so an application can tell a sure decision from
   a guess. `ConformalGestures.calibrate()`, `fit_temperature()`,

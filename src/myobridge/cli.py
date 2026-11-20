@@ -3,29 +3,33 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import errno
 import json
 import socket
 import sys
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 
 import numpy as np
 
 from . import __version__
 from .classifier import LDAClassifier, calibrate
 from .dsp import EmgFilter
+from .live_sets import LiveSets, StateServer, describe, pct
 from .lsl import LslOutlets
 from .pipeline import GesturePipeline
 from .protocol import Packet, SequenceTracker, decode_packet
-from .quality import QualityReport
+from .quality import QualityMonitor, QualityReport
 from .receiver import Receiver
+from .sessions import MIN_HOLD_S, Session
 from .simulator import GESTURES, EmgSimulator, gesture_session, packetize, run_udp
 
 DEFAULT_PORT = 5005  # ESP32 -> PC
 DEFAULT_FORWARD_PORT = 5006  # PC -> game engine
 NO_DATA_HINT_S = 3.0  # silence before the live commands print a troubleshooting hint
 RECORD_TIMEOUT_S = 5.0  # live calibrate gives up after this long without packets
+ESP32_RAIL = 2040.0  # |counts| the ESP32's 12-bit ADC reaches, centred on zero
 
 
 class CliError(Exception):
@@ -225,6 +229,12 @@ def cmd_record(args: argparse.Namespace) -> None:
 
 def cmd_calibrate(args: argparse.Namespace) -> None:
     gestures: list[str] = args.gestures
+    holds: list[np.ndarray] = []
+    if args.session and args.seconds < MIN_HOLD_S:
+        raise CliError(
+            f"--session needs holds of {MIN_HOLD_S:g} s or more for `myobridge fit` "
+            f"(got --seconds {args.seconds:g})"
+        )
     if args.sim:
         unknown = sorted(set(gestures) - set(GESTURES))
         if unknown:
@@ -232,17 +242,39 @@ def cmd_calibrate(args: argparse.Namespace) -> None:
                 f"the simulator has no gesture {unknown[0]!r}; choose from {', '.join(GESTURES)}"
             )
         sim = EmgSimulator(seed=args.seed, mains_hz=args.mains)
-        clf, X, y = calibrate(sim.record, gestures, args.seconds, sim.fs, mains_hz=args.mains)
+        record = keep_holds(sim.record, holds)
+        clf, X, y = calibrate(record, gestures, args.seconds, sim.fs, mains_hz=args.mains)
     else:
         with open_receiver(args.port) as rx:
-            clf, X, y = calibrate_live(rx, gestures, args)
+            clf, X, y = calibrate_live(rx, gestures, args, holds)
     train_acc = np.mean(clf.predict(X) == y)
     clf.save(args.out)
     print(f"Trained on {len(y)} windows, training accuracy {train_acc:.1%}. Saved {args.out}")
+    if args.session:
+        assert clf.settings is not None
+        session = Session(clf.settings.fs, tuple(gestures), tuple(holds), args.mains)
+        path = session.save(args.session)
+        print(f"Saved the recordings to {path} (for `myobridge fit`)")
+
+
+def keep_holds(
+    record: Callable[[str, float], np.ndarray], holds: list[np.ndarray]
+) -> Callable[[str, float], np.ndarray]:
+    """`record`, also appending each recording to `holds`."""
+
+    def recording(gesture: str, seconds: float) -> np.ndarray:
+        raw = record(gesture, seconds)
+        holds.append(np.asarray(raw))
+        return raw
+
+    return recording
 
 
 def calibrate_live(
-    rx: Receiver, gestures: list[str], args: argparse.Namespace
+    rx: Receiver,
+    gestures: list[str],
+    args: argparse.Namespace,
+    holds: list[np.ndarray] | None = None,
 ) -> tuple[LDAClassifier, np.ndarray, np.ndarray]:
     """Prompt for each gesture and record it from the device, at the device's rate."""
     first = next(p for p in live_packets(rx) if p is not None)
@@ -250,7 +282,7 @@ def calibrate_live(
     if args.rate is not None and args.rate != fs:
         print(f"note: the device sends {fs} Hz, not {args.rate} Hz; using {fs} Hz", file=sys.stderr)
 
-    def record(gesture: str, seconds: float) -> np.ndarray:
+    def prompted(gesture: str, seconds: float) -> np.ndarray:
         input(f"Get ready to hold '{gesture}' for {seconds:g} s, then press Enter...")
         rx.drain()  # drop what queued up while we waited for Enter
         print("  recording...", flush=True)
@@ -259,6 +291,7 @@ def calibrate_live(
         except (TimeoutError, ValueError) as err:
             raise CliError(str(err)) from None
 
+    record = prompted if holds is None else keep_holds(prompted, holds)
     return calibrate(record, gestures, args.seconds, fs, mains_hz=args.mains)
 
 
@@ -332,6 +365,215 @@ def cmd_forward(args: argparse.Namespace) -> None:
                 msg_seq += 1
                 if args.verbose:
                     print(message)
+
+
+# ------------------------------------------------------------------ fit / sets
+
+
+def cmd_fit(args: argparse.Namespace) -> None:
+    """Train on early sessions, fit the temperature and threshold on later ones."""
+    from .sessions import fit_sets
+
+    sessions = []
+    for path in args.sessions:
+        try:
+            sessions.append(Session.load(path))
+        except FileNotFoundError:
+            raise CliError(f"no session at {path}; record one with `calibrate --session`") from None
+        except (ValueError, KeyError) as err:
+            raise CliError(f"{path}: {err}") from None
+    try:
+        fitted = fit_sets(sessions, alpha=args.alpha)
+    except ValueError as err:
+        raise CliError(str(err)) from None
+    model_path, sets_path = fitted.save(args.out)
+    for r in fitted.roles:
+        print(
+            f"  {r['source']}  recorded {r['recorded_at'][:16].replace('T', ' ')}  ->  {r['role']}"
+        )
+    cg = fitted.sets
+    print(
+        f"Promise: the right gesture in the set {cg.coverage:.0%} of the time "
+        f"(temperature {cg.temperature:.3g}, threshold {cg.thresholds[0]:.3g})."
+    )
+    print(f"Saved {model_path} and {sets_path}. Each day: `myobridge sets --model {model_path}`")
+
+
+def sets_summary(recipe: dict[str, object]) -> str:
+    """Which sessions made the sets, in a few words, for the live view."""
+    sessions = recipe.get("sessions") or []
+    assert isinstance(sessions, list)
+    days = sorted({str(s.get("recorded_at", ""))[:10] for s in sessions if isinstance(s, dict)})
+    days = [d for d in days if d]
+    return f"sets from {len(sessions)} sessions ({', '.join(days)})" if days else ""
+
+
+def recalibration_session(
+    record: Callable[[str, float], np.ndarray], gestures: Sequence[str], seconds: float, fs: float
+) -> Session:
+    holds = [np.asarray(record(g, seconds)) for g in gestures]
+    return Session(fs, tuple(gestures), tuple(holds))
+
+
+def run_sets(
+    live: LiveSets,
+    blocks: Iterable[np.ndarray | None],
+    *,
+    duration: float | None = None,
+    server: StateServer | None = None,
+    draw: bool = True,
+    before_block: Callable[[], None] | None = None,
+) -> dict[str, object]:
+    """Feed `blocks` to `live` until they end or `duration` seconds have streamed."""
+    last_draw = 0.0
+    for block in blocks:
+        if block is None:
+            continue
+        state = live.push(block)
+        if server is not None:
+            server.update(state)
+        if draw and time.monotonic() - last_draw >= 0.1:
+            last_draw = time.monotonic()
+            sys.stdout.write("\r" + describe(state) + "\x1b[K")
+            sys.stdout.flush()
+        if duration is not None and live.t >= duration:
+            break
+        if before_block is not None:
+            before_block()
+    if draw:
+        print()
+    return live.state
+
+
+def sim_blocks(sim: EmgSimulator, block: int = 20, realtime: bool = True) -> Iterator[np.ndarray]:
+    """The simulator's stream, one packet at a time, at the pace of a real device."""
+    start, n = time.monotonic(), 0
+    while True:
+        yield sim.generate(block)
+        n += block
+        if realtime:
+            ahead = n / sim.fs - (time.monotonic() - start)
+            if ahead > 0:
+                time.sleep(ahead)
+
+
+def quality_monitor(
+    fs: float,
+    n_channels: int,
+    mains_hz: float,
+    today: Session | None,
+    rail: float | None = ESP32_RAIL,
+) -> QualityMonitor:
+    """The monitor that drops broken electrodes, with today's rest as its noise floor.
+
+    `rail` is the |count| at which a sample is clipped (None for the
+    simulator, which isn't an ADC and doesn't stop at the ESP32's rails).
+    """
+    from .quality import QualityConfig, rest_floor
+
+    low, high = (None, None) if rail is None else (-rail, rail)
+    cfg = QualityConfig(fs=fs, mains_hz=mains_hz, clip_low=low, clip_high=high)
+    floor = None
+    if today is not None and "rest" in today.labels:
+        floor = rest_floor(today.holds[today.labels.index("rest")], cfg)
+    return QualityMonitor(cfg, n_channels, floor)
+
+
+def cmd_sets(args: argparse.Namespace) -> None:
+    """Live gesture sets from the armband, recalibrated for today."""
+    from .live_sets import Prompter
+    from .sessions import CALIBRATION_WINDOW, load_sets, recalibrate
+
+    try:
+        sets, recipe = load_sets(args.model)
+    except FileNotFoundError as err:
+        raise CliError(str(err)) from None
+    model = sets.model
+    assert isinstance(model, LDAClassifier) and model.settings is not None
+    gestures = [str(c) for c in model.classes]
+    if args.recalibrate and args.recalibrate < CALIBRATION_WINDOW[1]:
+        raise CliError(f"--recalibrate needs {CALIBRATION_WINDOW[1]:g} s per gesture or more")
+    prompter = Prompter(gestures, args.hold, seed=args.seed) if args.prompt else None
+    info = {"sessions": sets_summary(recipe)}
+    today: Session | None = None
+    with contextlib.ExitStack() as stack:
+        server = None
+        if args.web is not None:
+            server = stack.enter_context(StateServer(port=args.web))
+            print(f"Open {server.url} for the large view", flush=True)
+        if args.sim:
+            unknown = sorted(set(gestures) - set(GESTURES))
+            if unknown:
+                raise CliError(f"the simulator has no gesture {unknown[0]!r}; use a --sim model")
+            sim = EmgSimulator(seed=args.seed + 7, mains_hz=model.settings.mains_hz)
+            n_channels = sim.n_channels
+            if args.recalibrate:
+                today = recalibration_session(sim.record, gestures, args.recalibrate, sim.fs)
+                sets = recalibrate(sets, today)
+                info["sessions"] += ", recalibrated today"
+            blocks: Iterable[np.ndarray | None] = sim_blocks(sim)
+        else:
+            rx = stack.enter_context(open_receiver(args.port))
+            stream = live_packets(rx)
+            first = next(p for p in stream if p is not None)
+            if not np.isclose(first.sample_rate, model.settings.fs):
+                raise CliError(
+                    f"the model was trained at {model.settings.fs:g} Hz but the device sends "
+                    f"{first.sample_rate} Hz"
+                )
+            n_channels = first.n_channels
+            if args.recalibrate:
+                fs = first.sample_rate
+
+                def record(gesture: str, seconds: float) -> np.ndarray:
+                    input(f"Recalibrating: hold '{gesture}' for {seconds:g} s, press Enter...")
+                    rx.drain()
+                    try:
+                        return rx.record(seconds, fs, timeout_s=RECORD_TIMEOUT_S)
+                    except (TimeoutError, ValueError) as err:
+                        raise CliError(str(err)) from None
+
+                today = recalibration_session(record, gestures, args.recalibrate, fs)
+                sets = recalibrate(sets, today)
+                info["sessions"] += ", recalibrated today"
+                rx.drain()
+            blocks = (p.samples if p is not None else None for p in stream)
+        monitor = None
+        if not args.no_monitor:
+            monitor = quality_monitor(
+                model.settings.fs,
+                n_channels,
+                model.settings.mains_hz,
+                today,
+                None if args.sim else ESP32_RAIL,
+            )
+        try:
+            live = LiveSets(sets, n_channels, prompter, monitor, info)
+        except ValueError as err:
+            raise CliError(str(err)) from None
+        follow = None
+        if args.sim:
+            if prompter is not None:
+
+                def follow() -> None:
+                    sim.set_gesture(live.prompt() or "rest")
+            else:
+
+                def follow() -> None:
+                    sim.set_gesture(gestures[int(live.t // args.hold) % len(gestures)])
+
+            follow()
+        if prompter is not None:
+            print(f"Hold each gesture the screen asks for ({args.hold:g} s each). Ctrl-C to stop.")
+        state = run_sets(live, blocks, duration=args.duration, server=server, before_block=follow)
+        if "score" in state:
+            score = state["score"]
+            assert isinstance(score, dict)
+            print(
+                f"Final: promised {pct(live.promised, 0)}, delivered {pct(score['coverage'])} "
+                f"over {score['windows']} windows; one gesture {pct(score['singleton_rate'], 0)}, "
+                f"right {pct(score['accuracy_when_singleton'], 0)} of those times"
+            )
 
 
 # ----------------------------------------------------------------------- demo
@@ -610,7 +852,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=3.0,
         help="rest period at the start that sets each channel's noise floor",
     )
-    s.add_argument("--rail", type=float, default=2040.0, help="|sample| counted as clipped")
+    s.add_argument("--rail", type=float, default=ESP32_RAIL, help="|sample| counted as clipped")
 
     s = command(
         "record",
@@ -641,6 +883,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--out", default="model.npz", help="where to save the model")
     s.add_argument("--sim", action="store_true", help="calibrate from the simulator instead")
     s.add_argument("--seed", type=int, default=0, help="simulator seed (with --sim)")
+    s.add_argument(
+        "--session",
+        metavar="PATH",
+        help="also save the raw recordings, for `myobridge fit` (needs --seconds 3 or more)",
+    )
 
     s = command(
         "forward", "classify live EMG and send gesture JSON over UDP", cmd_forward, uses_mains=True
@@ -662,6 +909,57 @@ def build_parser() -> argparse.ArgumentParser:
         'NAME-gestures (default name: myobridge; needs pip install "myobridge[lsl]")',
     )
     s.add_argument("--verbose", action="store_true", help="print every message sent")
+
+    s = command(
+        "fit",
+        "turn sessions from a few days into a model with a coverage promise",
+        cmd_fit,
+        uses_mains=False,
+    )
+    s.add_argument(
+        "sessions",
+        nargs="+",
+        help="session files from `calibrate --session`, oldest first: training, then the "
+        "temperature, then the threshold (two sessions: the second does both)",
+    )
+    s.add_argument("--alpha", type=probability, default=0.1, help="promised miss rate")
+    s.add_argument("--out", default="model.npz", help="model file; the sets go beside it")
+
+    s = command(
+        "sets",
+        "live gesture sets: one gesture when sure, more when not",
+        cmd_sets,
+        uses_mains=False,
+    )
+    s.add_argument("--port", type=listen_port, default=DEFAULT_PORT, help=port_help)
+    s.add_argument("--model", default="model.npz", help="model from `myobridge fit`")
+    s.add_argument(
+        "--recalibrate",
+        type=float,
+        default=2.0,
+        metavar="SECONDS",
+        help="hold each gesture this long first, to adapt to today's placement (0 = skip)",
+    )
+    s.add_argument(
+        "--prompt", action="store_true", help="ask for gestures and score the sets as you go"
+    )
+    s.add_argument("--hold", type=positive, default=4.0, help="seconds per prompted gesture")
+    s.add_argument(
+        "--web",
+        type=listen_port,
+        nargs="?",
+        const=8765,
+        metavar="PORT",
+        help="also show the sets in large type at http://127.0.0.1:PORT/ (default port 8765)",
+    )
+    s.add_argument(
+        "--no-monitor",
+        action="store_true",
+        help="keep using electrodes the quality monitor flags (to see what that does)",
+    )
+    s.add_argument("--duration", type=positive, help="stop after N seconds")
+    s.add_argument("--sim", action="store_true", help="use the simulator instead of a device")
+    s.add_argument("--seed", type=int, default=0, help="prompt order (and simulator) seed")
 
     s = command(
         "demo", "offline end-to-end run: simulate, train, evaluate", cmd_demo, uses_mains=False

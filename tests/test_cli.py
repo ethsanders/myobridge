@@ -387,3 +387,52 @@ def test_port_in_use_is_a_one_line_error(capsys):
         status, err = run_failing(["record", "--port", str(port)], capsys)
     assert status == 1
     assert err.startswith(f"myobridge record: error: can't listen on UDP port {port}")
+
+
+def test_sessions_fit_and_prompted_sets(tmp_path, capsys, monkeypatch):
+    """calibrate --session on three days, fit, then a prompted, scored run of sets."""
+    for i in range(3):
+        main(
+            [
+                "calibrate",
+                "--sim",
+                "--seed",
+                str(i),
+                "--seconds",
+                "4",
+                "--out",
+                str(tmp_path / f"m{i}.npz"),
+                "--session",
+                str(tmp_path / f"day{i}"),
+            ]
+        )
+    assert "Saved the recordings" in capsys.readouterr().out
+    model = tmp_path / "model.npz"
+    main(["fit", *(str(tmp_path / f"day{i}.npz") for i in range(3)), "--out", str(model)])
+    out = capsys.readouterr().out
+    assert "->  threshold" in out and (tmp_path / "model.sets.json").exists()
+
+    real = cli.sim_blocks
+    monkeypatch.setattr(cli, "sim_blocks", lambda sim: real(sim, realtime=False))
+    main(["sets", "--sim", "--model", str(model), "--prompt", "--hold", "3", "--duration", "15"])
+    final = capsys.readouterr().out.splitlines()[-1]
+    assert final.startswith("Final: promised 90%, delivered")
+
+
+def test_sets_without_fitted_sets_is_an_error(tmp_path, capsys):
+    main(["calibrate", "--sim", "--seconds", "2", "--out", str(tmp_path / "m.npz")])
+    status, err = run_failing(["sets", "--sim", "--model", str(tmp_path / "m.npz")], capsys)
+    assert status == 1 and "myobridge fit" in err
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["calibrate", "--sim", "--seconds", "2", "--session", "d.npz"], "needs holds of 3 s"),
+        (["fit", "missing.npz"], "no session at missing.npz"),
+    ],
+)
+def test_session_errors(argv, message, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    status, err = run_failing(argv, capsys)
+    assert status == 1 and message in err

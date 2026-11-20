@@ -38,6 +38,7 @@ nav:
       - Build the armband: hardware.md
       - First sessions on hardware: hardware-bringup.md
       - Send gestures to a game: protocol.md
+      - Your own 90% promise: your-promise.md
   - How it works:
       - Overview: how-it-works.md
       - Signal quality monitor: signal-quality.md
