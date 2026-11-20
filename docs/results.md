@@ -235,9 +235,9 @@ channels, 20-sample packets, 200 ms windows every 50 ms, 60 features, a
 
 | | |
 |---|---|
-| Processing per 20 ms packet (filter, features, LDA, vote) | 101 µs median, 534 µs p99 |
-| Share of real time used | 1.0% |
-| `adapt()` recalibration, 11 gestures | 0.26 ms |
+| Processing per 20 ms packet (filter, features, LDA, vote) | 117 µs median, 550 µs p99 |
+| Share of real time used | 1.3% |
+| `adapt()` recalibration, 11 gestures | 0.33 ms |
 
 Processing is not where the delay is. The time from starting a gesture to
 the smoothed output switching is set by the settings: up to 20 ms to fill a

@@ -2,7 +2,7 @@
   "quick": false,
   "provenance": {
     "schema": 1,
-    "myobridge": "0.1.0",
+    "myobridge": "0.2.0",
     "python": "3.13.18",
     "numpy": "2.5.3",
     "scipy": "1.18.1",
@@ -19,13 +19,13 @@
     }
   },
   "per_packet_us": {
-    "median": 100.579,
-    "p99": 534.09431,
-    "max": 1720.202,
+    "median": 117.0645,
+    "p99": 550.1601,
+    "max": 1045.780999,
     "n": 14950
   },
   "packet_period_us": 20000.0,
-  "cpu_share_of_real_time": 0.010212,
+  "cpu_share_of_real_time": 0.012879,
   "decision_delay_estimate_ms": {
     "packet_buffering": 20.0,
     "window_centre": 100.0,
@@ -33,14 +33,14 @@
     "note": "how long after a gesture starts the smoothed output can switch, ignoring network and muscle onset; computed from the settings, not measured"
   },
   "adapt_ms": {
-    "mean": 0.257228,
+    "mean": 0.327782,
     "new_windows": 184,
     "classes": 11
   },
   "features_batch_vs_loop": {
     "windows": 2000,
-    "batch_s": 0.169297,
-    "loop_s": 0.45713,
+    "batch_s": 0.205808,
+    "loop_s": 0.612166,
     "identical": true
   }
 }

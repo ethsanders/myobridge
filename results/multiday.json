@@ -2,7 +2,7 @@
   "quick": false,
   "provenance": {
     "schema": 1,
-    "myobridge": "0.1.0",
+    "myobridge": "0.2.0",
     "python": "3.13.18",
     "numpy": "2.5.3",
     "scipy": "1.18.1",

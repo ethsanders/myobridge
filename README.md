@@ -80,8 +80,8 @@ What stands out:
 - **A loose electrode is easy to catch.** The monitor notices within about
   a second and switches to a model without that electrode, computed
   instantly from the full one.
-- **It's fast.** Processing a 20 ms packet takes 101 µs (median,
-  534 µs p99), 1.0% of real time.
+- **It's fast.** Processing a 20 ms packet takes 117 µs (median,
+  550 µs p99), 1.3% of real time.
 - **1 kHz sampling is enough for the EMG.** Wideband amplifier noise does
   fold back, +2.9 dB at 1 kHz behind the sensor's gentle filter,
   which the firmware's optional 2x oversampling cuts to +1.0 dB.
