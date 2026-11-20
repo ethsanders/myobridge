@@ -7,8 +7,9 @@ a digital low-pass then removes 500-1000 Hz before we drop to 1 kHz, so the
 PC still receives 1 kHz data and nothing else changes.
 
 The filter is a 47-tap *halfband* FIR: every second coefficient is exactly
-zero and the centre one is exactly 1/2, so it costs 24 multiplies per output
-sample. It runs on the ESP32 in integer maths (firmware/.../mb_decimator.h).
+zero and the centre one is exactly 1/2, leaving 25 non-zero taps. They are
+symmetric, so one output sample costs 13 multiplies (12 pairs + the centre).
+It runs on the ESP32 in integer maths (firmware/.../mb_decimator.h).
 This module is the bit-exact Python reference that the firmware is tested
 against: same Q15 coefficients, same rounding, same saturation.
 
@@ -46,7 +47,7 @@ def design_halfband(n_taps: int = N_TAPS, beta: float = KAISER_BETA) -> NDArray[
     pin the centre to exactly 0.5.
     """
     if n_taps % 4 != 3:
-        raise ValueError("a halfband filter with zero end taps needs n_taps = 4k + 3")
+        raise ValueError("n_taps must be 4k + 3 (with 4k + 1 both end taps are zero)")
     h = signal.firwin(n_taps, 0.5, window=("kaiser", beta))
     q = np.round(h * 2**Q).astype(np.int64)
     q[n_taps // 2] = 2 ** (Q - 1)

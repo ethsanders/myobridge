@@ -4,8 +4,9 @@
 // config.h). Bit-exact with src/myobridge/decimator.py, which documents the
 // design; firmware/tests/ checks the two agree on random input.
 //
-// 47 taps, Q15. Every odd offset from the centre is zero and the centre is
-// exactly 0.5, so one output costs 12 symmetric pairs + the centre tap.
+// 47 taps, Q15. Every even offset from the centre (2, 4, ..., 22) is zero
+// and the centre is exactly 0.5, so one output costs 12 symmetric pairs + the
+// centre tap.
 // Worst case |acc| = 32768 * sum|h| = 1.76e9, which fits in int32.
 #pragma once
 
