@@ -21,12 +21,13 @@ from numpy.typing import NDArray
 
 from . import faults
 from .classifier import LDAClassifier
+from .conformal import ConformalGestures, blocked_scores
 from .datasets.core import Recording
 from .evaluation import FeatureConfig, featurize, filter_recording, fit_thresholds
 from .faults import Fault
 from .features import DEFAULT_FEATURE_SET
 from .pipeline import GesturePipeline
-from .quality import QualityConfig, QualityMonitor, rest_floor
+from .quality import DROP_CHANNEL_ON, QualityConfig, QualityMonitor, rest_floor
 
 FloatArray = NDArray[np.float64]
 
@@ -52,6 +53,30 @@ class Frame:
     channels: tuple[ChannelState, ...]
     raw: FloatArray  # the raw samples of this step, every `display_every`-th one
     accuracy: float | None  # share of predictions so far that matched the truth
+    gesture_set: tuple[str, ...] | None = None  # the newest window's set, if calibrated
+    sets: SetCounts | None = None  # how the sets have done so far
+
+
+@dataclass(frozen=True)
+class SetCounts:
+    """Running counts for the gesture sets, window by window."""
+
+    windows: int
+    covered: int  # sets that held the gesture being held
+    singletons: int  # sets of exactly one gesture
+    singletons_right: int  # ... that were the gesture being held
+
+    @property
+    def coverage(self) -> float | None:
+        return self.covered / self.windows if self.windows else None
+
+    @property
+    def singleton_rate(self) -> float | None:
+        return self.singletons / self.windows if self.windows else None
+
+    @property
+    def accuracy_when_singleton(self) -> float | None:
+        return self.singletons_right / self.singletons if self.singletons else None
 
 
 class Replay:
@@ -62,6 +87,12 @@ class Replay:
     `channels` picks a subset of electrodes, e.g. four to match the
     myobridge armband. `rail` is the ADC's full scale in signal units, if
     known, so clipping can be detected.
+
+    With `alpha`, every window also gets a conformal gesture set that should
+    hold the true gesture 1 - alpha of the time. Its threshold comes from
+    out-of-repetition scores on `train` (fit on the other repetitions, score
+    this one), so `train` needs at least two repetitions; `temperature`
+    softens the scores first (see `myobridge.conformal`).
     """
 
     def __init__(
@@ -77,6 +108,8 @@ class Replay:
         rest_label: int = 0,
         display_every: int = 4,
         seed: int = 0,
+        alpha: float | None = None,
+        temperature: float = 1.0,
     ):
         if not train or not test:
             raise ValueError("need recordings to train on and to replay")
@@ -97,6 +130,17 @@ class Replay:
         thresholds = fit_thresholds(train, mains_hz, cfg, rest_label=rest_label)
         table = featurize(train, mains_hz, cfg, thresholds)
         self.model = LDAClassifier(feature_set=feature_set).fit(table.X, table.label)
+        self.conformal: ConformalGestures | None = None
+        if alpha is not None:
+            decision, y, _ = blocked_scores(
+                lambda X, yy: LDAClassifier(feature_set=feature_set).fit(X, yy),
+                table.X,
+                table.label,
+                table.rep,
+            )
+            self.conformal = ConformalGestures.from_scores(
+                self.model, decision, y, alpha, temperature, "aps", seed=seed
+            )
 
         rails = {"clip_low": -rail, "clip_high": rail} if rail is not None else {}
         qcfg = QualityConfig(fs=self.fs, mains_hz=mains_hz, **rails)  # type: ignore[arg-type]
@@ -110,6 +154,7 @@ class Replay:
             zc_threshold=thresholds.zc,
             ssc_threshold=thresholds.ssc,
             monitor=self.monitor,
+            conformal=self.conformal,
         )
         # Each channel's typical EMG size while gesturing, which sets how
         # strong an injected hum or motion artefact is.
@@ -131,7 +176,22 @@ class Replay:
         self.faults: dict[int, Fault] = {}
         self._rng = np.random.default_rng(seed)
         self._last: tuple[str, float] | None = None
+        self._last_set: tuple[str, ...] | None = None
         self._hits = self._total = 0
+        self._sets = SetCounts(0, 0, 0, 0)
+
+    @property
+    def drops_flagged(self) -> bool:
+        """Whether the decoder stops using a channel the monitor flags."""
+        return bool(self.pipeline.drop_on)
+
+    def drop_flagged(self, on: bool) -> None:
+        """Let the monitor take broken channels out of the decoder (the default), or not.
+
+        With it off the monitor still reports problems, but the decoder keeps
+        every channel: what a decoder without a quality monitor would do.
+        """
+        self.pipeline.drop_on = DROP_CHANNEL_ON if on else frozenset()
 
     @property
     def duration_s(self) -> float:
@@ -181,6 +241,20 @@ class Replay:
                 self._hits += gesture == truth
                 self._total += 1
                 self._last = (gesture, p.confidence)
+                if p.gesture_set is not None:
+                    named = [self.gestures[int(g)] for g in p.gesture_set]
+                    # the decoder's own pick first, then the rest in gesture order
+                    raw = self.gestures[int(p.raw_gesture)]
+                    named.sort(key=lambda g: g != raw)
+                    self._last_set = tuple(named)
+                    one = len(named) == 1
+                    c = self._sets
+                    self._sets = SetCounts(
+                        c.windows + 1,
+                        c.covered + (truth in named),
+                        c.singletons + one,
+                        c.singletons_right + (one and named[0] == truth),
+                    )
         self.position = end
         report = self.pipeline.last_quality
         dropped = set(self.pipeline.dropped)
@@ -201,4 +275,6 @@ class Replay:
             channels=states,
             raw=self.stream[start : end : self.display_every].copy(),
             accuracy=self._hits / self._total if self._total else None,
+            gesture_set=self._last_set,
+            sets=self._sets if self.conformal is not None else None,
         )

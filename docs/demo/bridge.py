@@ -30,10 +30,16 @@ def add(part: str, values: Any, label: int, session: int, rep: int) -> None:
     _pending[part].append(rec)
 
 
-def start(channels: Any = None) -> dict[str, Any]:
-    """Calibrate on the queued train recordings and get ready to replay the test ones."""
+def start(channels: Any = None, alpha: Any = None, temperature: float = 1.0) -> dict[str, Any]:
+    """Calibrate on the queued train recordings and get ready to replay the test ones.
+
+    With `alpha`, every window also gets a conformal gesture set; `temperature`
+    is the one `bench conformal` fitted for 3DC (the page reads it from
+    days.json).
+    """
     global _replay
     chans = _py(channels)
+    a = _py(alpha)
     train, test = _pending["train"], _pending["test"]
     _pending["train"], _pending["test"] = [], []
     _replay = Replay(
@@ -43,6 +49,8 @@ def start(channels: Any = None) -> dict[str, Any]:
         mains_hz=threedc.MAINS_HZ,
         channels=list(chans) if chans else None,
         rail=threedc.ADC_RAIL,
+        alpha=None if a is None else float(a),
+        temperature=float(temperature),
     )
     return {
         "n_channels": _replay.n_channels,
@@ -52,18 +60,29 @@ def start(channels: Any = None) -> dict[str, Any]:
         "features": _replay.model.n_features,
         "trace_centre": _replay.trace_centre.tolist(),
         "trace_scale": _replay.trace_scale.tolist(),
+        "sets": _replay.conformal is not None,
     }
 
 
 def step(seconds: float) -> dict[str, Any]:
     assert _replay is not None
     f = _replay.step(seconds)
+    sets = f.sets
     return {
         "t": f.t,
         "truth": f.truth,
         "prediction": f.prediction,
         "confidence": f.confidence,
         "accuracy": f.accuracy,
+        "gesture_set": None if f.gesture_set is None else list(f.gesture_set),
+        "set_counts": None
+        if sets is None
+        else {
+            "windows": sets.windows,
+            "coverage": sets.coverage,
+            "singleton_rate": sets.singleton_rate,
+            "accuracy_when_singleton": sets.accuracy_when_singleton,
+        },
         "done": _replay.done,
         "channels": [
             {"issues": list(c.issues), "dropped": c.dropped, "fault": c.fault} for c in f.channels
@@ -77,3 +96,9 @@ def step(seconds: float) -> dict[str, Any]:
 def inject(channel: int, fault: str | None) -> None:
     assert _replay is not None
     _replay.inject(channel, fault or None)
+
+
+def drop_flagged(on: bool) -> None:
+    """The page's "quality monitor" switch: whether flagged channels leave the decoder."""
+    assert _replay is not None
+    _replay.drop_flagged(bool(on))

@@ -46,3 +46,38 @@ def test_bridge_replays_with_faults(bridge, fake_threedc):
     assert bridge.step(0.1)["channels"][1]["fault"] is None
     while not bridge.step(1.0)["done"]:
         pass
+
+
+def test_bridge_sets_and_monitor_switch(bridge, fake_threedc):
+    root = fake_threedc / "Participant1"
+    for session, folder, reps in ((0, "train", (0, 1)), (1, "test", (0,))):
+        for rep in reps:
+            for label in range(11):
+                f = root / folder / "EMG" / f"3dc_EMG_gesture_{rep}_{label}.txt"
+                bridge.add("train" if session == 0 else "test", _flat(f), label, session, rep)
+    info = bridge.start(None, 0.1, 3.0)
+    assert info["sets"] is True
+    frames = [bridge.step(0.1) for _ in range(30)]
+    last = frames[-1]
+    assert last["gesture_set"] and all(isinstance(g, str) for g in last["gesture_set"])
+    counts = last["set_counts"]
+    assert counts["windows"] > 0 and 0.0 <= counts["coverage"] <= 1.0
+    bridge.drop_flagged(False)
+    bridge.inject(2, "lead_off")
+    frame = [bridge.step(0.1) for _ in range(15)][-1]
+    assert frame["channels"][2]["issues"] == ["flatline"] and not frame["channels"][2]["dropped"]
+    bridge.drop_flagged(True)
+    assert bridge.step(0.3)["channels"][2]["dropped"]
+
+
+def test_bridge_without_sets(bridge, fake_threedc):
+    root = fake_threedc / "Participant1"
+    for rep in (0, 1):
+        for label in range(11):
+            f = root / "train" / "EMG" / f"3dc_EMG_gesture_{rep}_{label}.txt"
+            bridge.add("train", _flat(f), label, 0, rep)
+    f = root / "test" / "EMG" / "3dc_EMG_gesture_0_0.txt"
+    bridge.add("test", _flat(f), 0, 1, 0)
+    assert bridge.start()["sets"] is False
+    frame = bridge.step(0.5)
+    assert frame["gesture_set"] is None and frame["set_counts"] is None

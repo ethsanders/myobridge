@@ -13,6 +13,7 @@ from typing import Any
 from . import (
     aliasing_bench,
     conformal_bench,
+    demo_bench,
     latency_bench,
     multiday_bench,
     partial_bench,
@@ -29,6 +30,7 @@ EXPERIMENTS: dict[str, Callable[[RunOptions], dict[str, Any]]] = {
     "latency": latency_bench.run,
     "conformal": conformal_bench.run,
     "partial_calibration": partial_bench.run,
+    "demo": demo_bench.run,
 }
 
 __all__ = ["EXPERIMENTS", "RunOptions", "run"]

@@ -7,6 +7,7 @@ import {
   channelState,
   mapLimited,
   parseRecording,
+  pct,
   plan,
   prettyGesture,
   traceScale,
@@ -15,6 +16,8 @@ import {
 const $ = (id) => document.getElementById(id);
 const STEP_S = 0.1; // seconds of data per animation tick at 1x
 const HISTORY_S = 4; // seconds of trace shown
+const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js";
+const ALPHA = 0.1;
 
 let py = null; // the Pyodide instance, loaded once
 let bridge = null;
@@ -31,9 +34,28 @@ function setProgress(fraction) {
   if (fraction !== null) bar.firstElementChild.style.width = `${Math.round(fraction * 100)}%`;
 }
 
+// Pyodide is only fetched once someone asks for the live part.
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = () => reject(new Error(`couldn't load ${src}`));
+    document.head.append(el);
+  });
+}
+
+// The temperature bench conformal fitted for 3DC, shipped in days.json.
+async function temperature() {
+  const response = await fetch("days.json");
+  if (!response.ok) throw new Error(`${response.status} loading days.json`);
+  return (await response.json()).headline.threedc_temperature;
+}
+
 async function loadPython() {
   if (bridge) return bridge;
   setStatus("Starting Python...");
+  if (typeof loadPyodide === "undefined") await loadScript(PYODIDE);
   py = await loadPyodide();
   setStatus("Loading NumPy and SciPy...");
   await py.loadPackage(["numpy", "scipy", "micropip"]);
@@ -92,7 +114,8 @@ async function start() {
     const channels = $("channels").value === "4" ? EVEN_4 : null;
     queue("train", trainData);
     queue("test", testData);
-    const info = call(bridge.start, channels);
+    const info = call(bridge.start, channels, ALPHA, await temperature());
+    bridge.drop_flagged($("monitor").checked);
     buildLanes(info, channels);
     session = {
       info,
@@ -104,7 +127,7 @@ async function start() {
       speed: Number($("speed").value),
       person,
     };
-    $("model").textContent = `LDA, ${info.features} features`;
+    $("model").textContent = `LDA, ${info.features} features; sets promise ${pct(1 - ALPHA, 0)}`;
     $("live").hidden = false;
     setStatus(`Person ${person}: replaying ${info.duration_s.toFixed(0)} s they did after calibrating.`);
     $("play").textContent = "Pause";
@@ -173,9 +196,11 @@ function render(frame) {
   const match = frame.prediction && frame.prediction === frame.truth;
   $("prediction").classList.toggle("match", Boolean(match));
   $("prediction").classList.toggle("miss", Boolean(frame.prediction) && !match);
-  $("confidence").style.width = `${Math.round(frame.confidence * 100)}%`;
-  $("confidence-text").textContent = frame.prediction ? `${Math.round(frame.confidence * 100)}%` : "-";
-  $("accuracy").textContent = frame.accuracy == null ? "-" : `${(100 * frame.accuracy).toFixed(1)}%`;
+  $("accuracy").textContent = pct(frame.accuracy);
+  const counts = frame.set_counts;
+  $("coverage").textContent = counts ? pct(counts.coverage) : "-";
+  $("singletons").textContent = counts ? pct(counts.singleton_rate, 0) : "-";
+  renderLiveSet(frame);
   $("clock").textContent = `${frame.t.toFixed(1)} s`;
 
   const lanes = $("lanes").children;
@@ -188,6 +213,32 @@ function render(frame) {
     const values = session.rings[c].toArray();
     drawTrace(lane.querySelector("canvas"), values, channelState(ch), session.scales[c]);
   });
+}
+
+function renderLiveSet(frame) {
+  const box = $("live-set");
+  const names = Array.isArray(frame.gesture_set) ? frame.gesture_set : null;
+  if (!names) {
+    box.replaceChildren();
+    return;
+  }
+  const make = (text, kind) => {
+    const el = document.createElement("span");
+    el.className = `chip ${kind}`;
+    el.textContent = prettyGesture(text);
+    return el;
+  };
+  const hit = names.includes(frame.truth);
+  if (names.length === 1) {
+    box.replaceChildren(make(names[0], hit ? "sure" : "wrong"));
+  } else if (names.length === 0) {
+    box.replaceChildren(make("no gesture fits", "missed"));
+  } else {
+    const lead = document.createElement("span");
+    lead.className = "chips-lead";
+    lead.textContent = "not sure:";
+    box.replaceChildren(lead, ...names.map((g) => make(g, g === frame.truth ? "unsure hit" : "unsure")));
+  }
 }
 
 function drawTrace(canvas, values, state, fixed) {
@@ -236,6 +287,9 @@ function init() {
     if (session) session.speed = Number($("speed").value);
   });
   $("restart").addEventListener("click", start);
+  $("monitor").addEventListener("change", (e) => {
+    if (bridge && session) bridge.drop_flagged(e.target.checked);
+  });
 }
 
 init();

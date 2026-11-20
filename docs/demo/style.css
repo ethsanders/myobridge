@@ -12,6 +12,11 @@
   --trace: #36454f;
   --trace-warn: #b7791f;
   --trace-bad: #c2412d;
+  --sure: #2f8f4e;
+  --unsure: #9aa5ad;
+  --wrong: #c2412d;
+  --missed: #d08a1e;
+  --fault: #c2412d;
   --radius: 10px;
   color-scheme: light;
 }
@@ -31,6 +36,11 @@
     --trace: #c3ccd2;
     --trace-warn: #e0a84a;
     --trace-bad: #f07a63;
+    --sure: #5cc47f;
+    --unsure: #5d6870;
+    --wrong: #f07a63;
+    --missed: #e0a84a;
+    --fault: #f07a63;
     color-scheme: dark;
   }
 }
@@ -351,6 +361,209 @@ button:disabled {
   height: 1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
+}
+
+.lede {
+  font-size: 1.05rem;
+}
+
+.days,
+.board {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.days {
+  padding: 16px;
+  margin: 24px 0 8px;
+}
+
+.board {
+  border: 0;
+  padding: 0;
+  margin-top: 16px;
+}
+
+.day-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: end;
+}
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.segmented #day-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.seg-label {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  margin-right: 2px;
+}
+
+button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+label.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.now {
+  display: grid;
+  gap: 2px;
+  min-height: 7.5rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 2.4rem;
+}
+
+.chips-lead {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.chip {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 1.05rem;
+  border: 2px solid transparent;
+}
+
+.chip.sure {
+  background: var(--sure);
+  color: var(--accent-ink);
+}
+
+.chip.wrong {
+  background: var(--wrong);
+  color: var(--accent-ink);
+}
+
+.chip.unsure,
+.chip.missed,
+.chip.idle {
+  background: var(--bg);
+  border-color: var(--unsure);
+  color: var(--ink);
+}
+
+.chip.unsure.hit {
+  border-color: var(--sure);
+}
+
+.chip.missed {
+  border-color: var(--missed);
+}
+
+.scoreboard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 12px 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.score {
+  color: var(--ink-2);
+}
+
+.score b {
+  color: var(--ink);
+}
+
+.score.main b {
+  font-size: 1.35rem;
+}
+
+.score.main.short b {
+  color: var(--wrong);
+}
+
+.strip {
+  display: block;
+  width: 100%;
+  height: 56px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.swatch.sure {
+  background: var(--sure);
+}
+
+.swatch.unsure {
+  background: var(--unsure);
+}
+
+.swatch.wrong {
+  background: var(--wrong);
+}
+
+.swatch.missed {
+  background: var(--missed);
+}
+
+.swatch.fault {
+  height: 4px;
+  vertical-align: 2px;
+  background: var(--fault);
+}
+
+.benchmark {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  margin: 10px 0 0;
+}
+
+.live-intro h2 {
+  font-size: 1.4rem;
+  margin: 40px 0 8px;
+}
+
+.model-line {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  margin: 10px 0 0;
+}
+
+.decoder label.check {
+  margin: 4px 0 12px;
 }
 
 @media (max-width: 760px) {

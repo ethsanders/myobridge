@@ -3,27 +3,114 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myobridge live demo</title>
-  <meta name="description" content="Real forearm EMG decoded into gestures in your browser by the myobridge Python library, with a signal-quality monitor you can try to break.">
+  <title>myobridge: a gesture decoder that says when it isn't sure</title>
+  <meta name="description" content="A forearm EMG gesture decoder that answers with a set of gestures and a promise: the right one is in it 90% of the time, and that promise holds across 91 days of real recordings.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="top">
     <a class="brand" href="../">myobridge</a>
-    <nav><a href="../">Docs</a><a href="https://github.com/ethsanders/myobridge">GitHub</a></nav>
+    <nav><a href="../conformal/">How it works</a><a href="https://github.com/ethsanders/myobridge">GitHub</a></nav>
   </header>
 
   <main>
     <section class="intro">
-      <h1>Decode a real forearm, in your browser</h1>
+      <h1>It tells you when it doesn't know</h1>
+      <p class="lede">
+        A gesture decoder usually names one gesture for every 50 ms of forearm muscle
+        signal, right or wrong. This one answers with a set and a promise: the gesture you
+        are holding is in the set 90% of the time. One gesture in the set means it's sure.
+        Several mean it's torn, and a prosthesis or a game can wait instead of guessing.
+      </p>
+      <p class="lede">
+        The hard part is keeping that promise after the armband comes off and goes back on.
+        Below is one person on four different days, months after the decoder was trained.
+      </p>
+    </section>
+
+    <section id="days" class="days" aria-labelledby="days-title">
+      <h2 id="days-title" class="visually-hidden">Across days</h2>
+      <div class="day-controls">
+        <div class="segmented" role="group" aria-label="Day">
+          <span class="seg-label">Day</span>
+          <span id="day-buttons"></span>
+        </div>
+        <div class="segmented" role="group" aria-label="Method">
+          <span class="seg-label">Sets from</span>
+          <button type="button" data-method="myobridge" aria-pressed="true">myobridge</button>
+          <button type="button" data-method="textbook" aria-pressed="false">the textbook recipe</button>
+        </div>
+        <label class="check"><input type="checkbox" id="recal" checked> Recalibrate this day (1 s per gesture)</label>
+        <label>Electrode 1
+          <select id="electrode">
+            <option value="ok">Working</option>
+            <option value="off">Comes off halfway, no quality monitor</option>
+            <option value="off_monitor">Comes off halfway, quality monitor on</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="board">
+        <div class="now">
+          <span class="label">Holding</span>
+          <span id="d-truth" class="gesture">-</span>
+          <span class="label">Decoder's answer</span>
+          <div id="d-set" class="chips" aria-live="off"></div>
+        </div>
+        <p id="scoreboard" class="scoreboard" aria-live="polite">Loading the recordings' decoded sets...</p>
+        <canvas id="strip" class="strip" height="56" aria-label="Every decision this day so far, coloured by how its set did"></canvas>
+        <p class="legend">
+          <span><span class="swatch sure"></span> sure and right</span>
+          <span><span class="swatch unsure"></span> not sure, right one in the set</span>
+          <span><span class="swatch wrong"></span> sure and wrong</span>
+          <span><span class="swatch missed"></span> not sure, right one missing</span>
+          <span><span class="swatch fault"></span> electrode off</span>
+        </p>
+        <div class="controls">
+          <button id="d-play" type="button">Pause</button>
+          <label>Speed
+            <select id="d-speed">
+              <option value="1">1x</option>
+              <option value="2" selected>2x</option>
+              <option value="4">4x</option>
+            </select>
+          </label>
+          <button id="d-restart" type="button">Restart the day</button>
+        </div>
+        <p id="benchmark" class="benchmark"></p>
+      </div>
+    </section>
+
+    <section class="notes">
+      <h2>Try this</h2>
+      <ol>
+        <li>Switch to <em>the textbook recipe</em>: the usual score, its threshold set on days
+          11-30, and no recalibration. It makes the same 90% promise and keeps it less and less
+          as the days go by. Try day 91.</li>
+        <li>Tick <em>Recalibrate</em> with the textbook recipe. A second of each gesture from
+          today gets close on some days and not on others: its probabilities are nearly all 0
+          or 1, so the threshold has nothing to work with.</li>
+        <li>Lift electrode 1 without the quality monitor. The sets start missing: a broken
+          electrode doesn't make the decoder unsure, it makes it wrong. Turn the monitor on and the
+          promise holds again, with bigger sets, because four electrodes became three.</li>
+      </ol>
       <p>
-        This page runs the myobridge Python library itself (via
-        <a href="https://pyodide.org">Pyodide</a>) on real recordings from the
-        <a href="https://github.com/libemg/3DCDataset">3DC dataset</a>. It
-        calibrates on one part of a person's session, then streams the rest
-        through the live pipeline 20 samples at a time, exactly as packets
-        arrive from the armband. Break an electrode while it plays and watch
-        the quality monitor catch it.
+        These are the decoder's real outputs on MultiDay days 31, 61, 91 and 121 (one person,
+        electrodes re-applied every day; trained on days 1-10). They were computed with the
+        library by <code>myobridge bench demo</code>, and this page only plays them back and counts.
+        The decoder is an LDA on 15 features per electrode; the sets come from
+        <code>ConformalGestures</code>. <a href="../conformal/">How the recipe works</a>.
+      </p>
+    </section>
+
+    <section class="intro live-intro">
+      <h2>Now break one yourself</h2>
+      <p>
+        This part runs the myobridge Python library itself in your browser (via
+        <a href="https://pyodide.org">Pyodide</a>) on a different dataset,
+        <a href="https://github.com/libemg/3DCDataset">3DC</a>. It calibrates on part of a
+        person's session, then streams the rest through the live pipeline 20 samples at a time,
+        exactly as packets arrive from the armband. Pick a fault for any electrode while it plays.
       </p>
     </section>
 
@@ -39,7 +126,7 @@
         </select>
       </label>
       <button id="start" class="primary">Load and calibrate</button>
-      <p id="status" role="status" aria-live="polite">The first run downloads Python, NumPy and SciPy (your browser caches them) and about 7 MB of recordings.</p>
+      <p id="status" role="status" aria-live="polite">This downloads Python, NumPy and SciPy (about 30 MB, cached afterwards) and about 7 MB of recordings, so it's best on Wi-Fi.</p>
       <div id="progress" class="progress" hidden><div></div></div>
     </section>
 
@@ -54,14 +141,18 @@
             <span class="label">Decoded</span>
             <span id="prediction" class="gesture">-</span>
           </div>
+          <div>
+            <span class="label">Set</span>
+            <div id="live-set" class="chips"></div>
+          </div>
         </div>
-        <div class="meter" aria-hidden="true"><div id="confidence"></div></div>
         <dl class="stats">
-          <div><dt>Confidence</dt><dd id="confidence-text">-</dd></div>
           <div><dt>Correct so far</dt><dd id="accuracy">-</dd></div>
+          <div><dt>Right one in the set</dt><dd id="coverage">-</dd></div>
+          <div><dt>One-gesture sets</dt><dd id="singletons">-</dd></div>
           <div><dt>Time</dt><dd id="clock">0.0 s</dd></div>
-          <div><dt>Model</dt><dd id="model">-</dd></div>
         </dl>
+        <label class="check"><input type="checkbox" id="monitor" checked> Quality monitor drops broken electrodes</label>
         <div class="controls">
           <button id="play">Pause</button>
           <label>Speed
@@ -73,6 +164,7 @@
           </label>
           <button id="restart">Restart</button>
         </div>
+        <p class="model-line">Model: <span id="model">-</span></p>
       </div>
 
       <div class="channels">
@@ -90,22 +182,26 @@
     </section>
 
     <section class="notes">
-      <h2>What you're seeing</h2>
+      <h2>What you're seeing in the live part</h2>
       <ul>
         <li>The model is LDA on 15 features per electrode, trained on the person's first two
           cycles through the 11 gestures (about 2 minutes of data). It then decodes their first
           cycle of the second half of the session, which it never saw.</li>
+        <li>The set's threshold comes from those two training cycles (each scored by a model fitted
+          on the other), with the temperature <code>bench conformal</code> chose on people 1-6.</li>
         <li>An electrode coming off or clipping makes the decoder drop that channel and carry on
-          with the others, using the same model minus that electrode's features. Mains hum and
-          motion are flagged but kept, because the filters already remove most of them.</li>
+          with the others, using the same model minus that electrode's features and the same
+          threshold. Mains hum and motion are flagged but kept, because the filters already remove
+          most of them. With the monitor switch off, flagged electrodes stay in.</li>
         <li>The trace shows the <em>raw</em> signal, before filtering, which is what the monitor
           looks at.</li>
       </ul>
       <p class="credit">
-        Recordings: 3DC dataset, Côté-Allard et al., <em>Frontiers in Bioengineering and
-        Biotechnology</em> 8:158 (2020), as mirrored by the
-        <a href="https://github.com/libemg">LibEMG</a> project. Your browser loads them directly
-        from that repository; this site doesn't host a copy.
+        Recordings: MultiDay, Kaufmann, Englehart &amp; Platzner, IEEE EMBC 2010, and 3DC,
+        Côté-Allard et al., <em>Frontiers in Bioengineering and Biotechnology</em> 8:158 (2020),
+        both as mirrored by the <a href="https://github.com/libemg">LibEMG</a> project. This site
+        holds no EMG: the first part ships only decoded sets, and for the live part your browser
+        loads the recordings directly from LibEMG's repository.
       </p>
     </section>
   </main>
@@ -126,7 +222,7 @@
     </div>
   </template>
 
-  <script src="https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js"></script>
+  <script type="module" src="days.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -209,7 +209,7 @@ def test_conformal_quick(data, tmp_path):
     assert within["rows"]["temp_aps"]["0.1"]["coverage"]["n"] == 2  # persons 7 and 8
     assert out["threedc"]["cross_person"]["adapt"]["rows"]["lac"]["0.1"]["coverage"]["n"] == 2
     flt = out["threedc"]["faults"]["results"]["lead_off"]
-    assert set(flt) == {"clean", "no_monitor", "monitor", "oracle_drop"}
+    assert set(flt) == {"clean", "no_monitor", "monitor", "monitor_shared_threshold", "oracle_drop"}
     saved = json.loads((tmp_path / "results" / "conformal.quick.json").read_text())
     assert saved["datasets"]["3dc"]["commit"] == out["datasets"]["3dc"]["commit"]
 
@@ -269,3 +269,49 @@ def test_partial_shift_and_hybrid_by_hand():
     np.testing.assert_allclose(hyb.means_[1], base.means_[1] + 5)
     shared = (n * offset + 1 * np.array([5.0, 5.0])) / (n + 1)
     np.testing.assert_allclose(hyb.means_[2], base.means_[2] + shared)
+
+
+def test_demo_quick(data, tmp_path):
+    from myobridge.bench import demo_bench
+
+    o = opts(data, tmp_path)
+    with pytest.raises(FileNotFoundError, match="bench conformal"):
+        bench.EXPERIMENTS["demo"](o)
+    bench.EXPERIMENTS["conformal"](o)
+    out = bench.EXPERIMENTS["demo"](o)
+    saved = json.loads((tmp_path / "results" / "demo.quick.json").read_text())
+    assert saved["days"][0]["day"] == out["days"][0]["day"]
+    days = out["days"]
+    assert [d["day"] for d in days] == multiday_bench.TEST_DAYS[:2]
+    k = len(out["gestures"])
+    for d in days:
+        n = len(d["truth"])
+        assert n == len(d["t"]) > 0
+        assert all(b >= a for a, b in zip(d["t"], d["t"][1:], strict=False))  # play order
+        assert len(d["variants"]) == 12
+        for name, v in d["variants"].items():
+            assert len(v["sets"]) == len(v["top"]) == len(v["dropped"]) == n
+            assert all(0 <= s < 2**k for s in v["sets"])
+            if not name.endswith("off_monitor"):
+                assert not any(v["dropped"])
+        # the electrode lifts halfway: the first half of each variant is untouched
+        first = [i for i, t in enumerate(d["t"]) if t <= d["fault_from"]]
+        ok, off = d["variants"]["adapt-myobridge-ok"], d["variants"]["adapt-myobridge-off"]
+        assert first and [ok["top"][i] for i in first] == [off["top"][i] for i in first]
+        seg = d["segments"]
+        assert [s["gesture"] for s in seg] == sorted(s["gesture"] for s in seg)
+        assert seg[-1]["start"] + seg[-1]["length"] >= d["t"][-1] - 1e-6
+    h = out["headline"]
+    conf = json.loads((tmp_path / "results" / "conformal.quick.json").read_text())
+    assert h["multiday"]["adapt-myobridge"]["mean"] == pytest.approx(
+        conf["multiday"]["rows"]["adapt_temp_aps"]["0.1"]["coverage"]["mean"]
+    )
+    assert h["threedc_temperature"] == conf["threedc"]["within_sitting"]["temperature"]
+    assert set(out["temperatures"]) == {
+        "static-textbook",
+        "static-myobridge",
+        "adapt-textbook",
+        "adapt-myobridge",
+    }
+    assert out["temperatures"]["adapt-textbook"] == 1.0
+    assert demo_bench._encode(np.array([[True, False, True], [False, False, False]])) == [5, 0]

@@ -106,3 +106,77 @@ export const ISSUE_TEXT = {
   line_noise: "mains hum",
   motion: "motion",
 };
+
+// ---------------------------------------------------------------- gesture sets
+
+// days.json stores each window's set as a bitmask: bit c is gesture c.
+export function setMembers(mask, k) {
+  const out = [];
+  for (let c = 0; c < k; c++) if (mask & (1 << c)) out.push(c);
+  return out;
+}
+
+// The decoder's own pick first, then the rest in gesture order.
+export function orderedSet(mask, top, k) {
+  const members = setMembers(mask, k);
+  return members.sort((a, b) => (b === top) - (a === top) || a - b);
+}
+
+export function variantKey(recalibrate, method, electrode) {
+  return `${recalibrate ? "adapt" : "static"}-${method}-${electrode}`;
+}
+
+// What one window's set says about the gesture being held.
+//   sure: one gesture, the right one      wrong: one gesture, the wrong one
+//   unsure: several, the right one among them   missed: several (or none), not it
+export function windowKind(mask, truth) {
+  const hit = (mask & (1 << truth)) !== 0;
+  const single = mask !== 0 && (mask & (mask - 1)) === 0;
+  if (single) return hit ? "sure" : "wrong";
+  return hit ? "unsure" : "missed";
+}
+
+// Counts over the first `n` windows of a day (all of them by default).
+export function tally(truth, sets, n = truth.length) {
+  let covered = 0;
+  let singletons = 0;
+  let singletonsRight = 0;
+  for (let i = 0; i < n; i++) {
+    const kind = windowKind(sets[i], truth[i]);
+    if (kind === "sure" || kind === "unsure") covered++;
+    if (kind === "sure" || kind === "wrong") singletons++;
+    if (kind === "sure") singletonsRight++;
+  }
+  return {
+    windows: n,
+    covered,
+    singletons,
+    singletonsRight,
+    coverage: n ? covered / n : null,
+    singletonRate: n ? singletons / n : null,
+    accuracyWhenSingleton: singletons ? singletonsRight / singletons : null,
+  };
+}
+
+// How many windows have ended by time t (times sorted ascending).
+export function countUpTo(times, t) {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+// The gesture being held at replay time t.
+export function segmentAt(segments, t) {
+  for (const s of segments) if (t < s.start + s.length) return s;
+  return segments.at(-1);
+}
+
+export function pct(x, digits = 1) {
+  return x == null ? "-" : `${(100 * x).toFixed(digits)}%`;
+}
+

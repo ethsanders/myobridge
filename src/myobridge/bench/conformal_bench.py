@@ -678,9 +678,11 @@ def _monitor_sets(
     drops: _DropCache,
     alpha: float,
     rng: np.random.Generator,
+    shared: bool = False,
 ) -> tuple[NDArray[np.bool_], IntArray, IntArray]:
     """Each window decoded by the model without whatever the monitor had flagged
-    by the end of that window, against that model's own threshold."""
+    by the end of that window, against that model's own threshold, or with
+    `shared` against the full model's threshold (what GesturePipeline does)."""
     n_ch = drops.n_channels
     bads: list[tuple[int, ...]] = []
     for i in range(len(t)):
@@ -695,7 +697,8 @@ def _monitor_sets(
     for bad in set(bads):
         rows = np.array([b == bad for b in bads])
         g = drops.scored(bad, t.take(rows))
-        s, tp = _sets(g, drops.threshold(bad, alpha), drops.temp, drops.score, rng)
+        th = drops.threshold(() if shared else bad, alpha)
+        s, tp = _sets(g, th, drops.temp, drops.score, rng)
         sets[rows], top[rows], y[rows] = s, tp, g.y
     return sets, top, y
 
@@ -719,7 +722,8 @@ def faults(ds: Dataset, temp: float, report: list[int], quick: bool) -> dict[str
     people = report[:2] if quick else report
     channels = EVEN_4[:2] if quick else EVEN_4
     n_ch = ds.n_channels
-    decoders = ("clean", "no_monitor", "monitor", "oracle_drop")
+    decoders = ("clean", "no_monitor", "monitor", "monitor_shared_threshold", "oracle_drop")
+    shared_rng = np.random.default_rng(2)  # its own stream, so the other rows don't move
     acc: dict[str, dict[str, dict[str, list[dict[str, float]]]]] = {
         sc: {d: {str(a): [] for a in ALPHAS} for d in decoders} for sc in scenarios
     }
@@ -752,9 +756,12 @@ def faults(ds: Dataset, temp: float, report: list[int], quick: bool) -> dict[str
                     for b in broken
                 ]
                 found["monitor"] = {}
+                found["monitor_shared_threshold"] = {}
                 for a in ALPHAS:
                     sets, top, y = _monitor_sets(t, timelines, drops, a, rng)
                     found["monitor"][str(a)] = set_metrics(sets, y, top)
+                    sets, top, y = _monitor_sets(t, timelines, drops, a, shared_rng, shared=True)
+                    found["monitor_shared_threshold"][str(a)] = set_metrics(sets, y, top)
                 for d in decoders:
                     for a in ALPHAS:
                         res[d][str(a)].append(found[d][str(a)])
@@ -774,6 +781,8 @@ def faults(ds: Dataset, temp: float, report: list[int], quick: bool) -> dict[str
                 }
     return {
         "recipe": "temperature (from within_sitting) + APS, per-person out-of-block thresholds",
+        "monitor": "thresholds recalibrated for the model without the flagged channels",
+        "monitor_shared_threshold": "the full model's threshold kept, as GesturePipeline does",
         "failed_channels": list(channels),
         "averaged_over": f"{len(people)} persons x {len(channels)} failed channels",
         "results": summary,

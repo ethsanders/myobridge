@@ -44298,6 +44298,8 @@
     },
     "faults": {
       "recipe": "temperature (from within_sitting) + APS, per-person out-of-block thresholds",
+      "monitor": "thresholds recalibrated for the model without the flagged channels",
+      "monitor_shared_threshold": "the full model's threshold kept, as GesturePipeline does",
       "failed_channels": [
         0,
         2,
@@ -44437,6 +44439,50 @@
               "mean_set_size": 1.034935,
               "singleton_rate": 0.703985,
               "accuracy_when_singleton": 0.947901
+            }
+          },
+          "monitor_shared_threshold": {
+            "0.05": {
+              "coverage": {
+                "mean": 0.943779,
+                "std": 0.040148,
+                "min": 0.799802,
+                "max": 0.98401,
+                "ci95_low": 0.932797,
+                "ci95_high": 0.952842,
+                "n": 64
+              },
+              "mean_set_size": 1.79886,
+              "singleton_rate": 0.562195,
+              "accuracy_when_singleton": 0.978307
+            },
+            "0.1": {
+              "coverage": {
+                "mean": 0.902436,
+                "std": 0.040113,
+                "min": 0.762094,
+                "max": 0.950554,
+                "ci95_low": 0.891765,
+                "ci95_high": 0.911423,
+                "n": 64
+              },
+              "mean_set_size": 1.384694,
+              "singleton_rate": 0.647552,
+              "accuracy_when_singleton": 0.968297
+            },
+            "0.2": {
+              "coverage": {
+                "mean": 0.814816,
+                "std": 0.038378,
+                "min": 0.677996,
+                "max": 0.875277,
+                "ci95_low": 0.804556,
+                "ci95_high": 0.823308,
+                "n": 64
+              },
+              "mean_set_size": 1.068853,
+              "singleton_rate": 0.699818,
+              "accuracy_when_singleton": 0.950923
             }
           },
           "oracle_drop": {
@@ -44617,6 +44663,50 @@
               "accuracy_when_singleton": 0.919843
             }
           },
+          "monitor_shared_threshold": {
+            "0.05": {
+              "coverage": {
+                "mean": 0.918718,
+                "std": 0.045828,
+                "min": 0.76383,
+                "max": 0.976876,
+                "ci95_low": 0.907112,
+                "ci95_high": 0.929141,
+                "n": 64
+              },
+              "mean_set_size": 1.780685,
+              "singleton_rate": 0.568419,
+              "accuracy_when_singleton": 0.940349
+            },
+            "0.1": {
+              "coverage": {
+                "mean": 0.878052,
+                "std": 0.045662,
+                "min": 0.727859,
+                "max": 0.939975,
+                "ci95_low": 0.866661,
+                "ci95_high": 0.888626,
+                "n": 64
+              },
+              "mean_set_size": 1.37264,
+              "singleton_rate": 0.652422,
+              "accuracy_when_singleton": 0.93511
+            },
+            "0.2": {
+              "coverage": {
+                "mean": 0.793514,
+                "std": 0.045069,
+                "min": 0.639295,
+                "max": 0.862731,
+                "ci95_low": 0.781838,
+                "ci95_high": 0.803908,
+                "n": 64
+              },
+              "mean_set_size": 1.063106,
+              "singleton_rate": 0.703284,
+              "accuracy_when_singleton": 0.922228
+            }
+          },
           "oracle_drop": {
             "0.05": {
               "coverage": {
@@ -44795,6 +44885,50 @@
               "accuracy_when_singleton": 0.951687
             }
           },
+          "monitor_shared_threshold": {
+            "0.05": {
+              "coverage": {
+                "mean": 0.9408,
+                "std": 0.040935,
+                "min": 0.802778,
+                "max": 0.978352,
+                "ci95_low": 0.929754,
+                "ci95_high": 0.949796,
+                "n": 64
+              },
+              "mean_set_size": 1.619621,
+              "singleton_rate": 0.618897,
+              "accuracy_when_singleton": 0.979879
+            },
+            "0.1": {
+              "coverage": {
+                "mean": 0.89675,
+                "std": 0.039385,
+                "min": 0.761846,
+                "max": 0.939237,
+                "ci95_low": 0.88632,
+                "ci95_high": 0.905629,
+                "n": 64
+              },
+              "mean_set_size": 1.275539,
+              "singleton_rate": 0.694613,
+              "accuracy_when_singleton": 0.969856
+            },
+            "0.2": {
+              "coverage": {
+                "mean": 0.804901,
+                "std": 0.036667,
+                "min": 0.671794,
+                "max": 0.851399,
+                "ci95_low": 0.795103,
+                "ci95_high": 0.813222,
+                "n": 64
+              },
+              "mean_set_size": 1.008215,
+              "singleton_rate": 0.723825,
+              "accuracy_when_singleton": 0.951296
+            }
+          },
           "oracle_drop": {
             "0.05": {
               "coverage": {
@@ -44971,6 +45105,50 @@
               "mean_set_size": 1.005597,
               "singleton_rate": 0.724857,
               "accuracy_when_singleton": 0.950217
+            }
+          },
+          "monitor_shared_threshold": {
+            "0.05": {
+              "coverage": {
+                "mean": 0.940369,
+                "std": 0.041037,
+                "min": 0.802778,
+                "max": 0.978106,
+                "ci95_low": 0.929517,
+                "ci95_high": 0.949346,
+                "n": 64
+              },
+              "mean_set_size": 1.624391,
+              "singleton_rate": 0.617746,
+              "accuracy_when_singleton": 0.978721
+            },
+            "0.1": {
+              "coverage": {
+                "mean": 0.895592,
+                "std": 0.039007,
+                "min": 0.763086,
+                "max": 0.938745,
+                "ci95_low": 0.885129,
+                "ci95_high": 0.904283,
+                "n": 64
+              },
+              "mean_set_size": 1.279896,
+              "singleton_rate": 0.692255,
+              "accuracy_when_singleton": 0.968817
+            },
+            "0.2": {
+              "coverage": {
+                "mean": 0.804637,
+                "std": 0.036904,
+                "min": 0.677996,
+                "max": 0.848901,
+                "ci95_low": 0.794699,
+                "ci95_high": 0.81301,
+                "n": 64
+              },
+              "mean_set_size": 1.010825,
+              "singleton_rate": 0.723012,
+              "accuracy_when_singleton": 0.950822
             }
           },
           "oracle_drop": {

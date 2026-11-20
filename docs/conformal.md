@@ -141,8 +141,14 @@ At 90%:
 The first row is the important one. Without the monitor, 79.2% of the sets
 still hold a single gesture, and those are right 24.5% of the time. Conformal
 sets do not notice a broken electrode: the scores look as sure as ever. The
-monitor has to catch the fault and drop the channel; after that the sets keep
-their promise with the thresholds they already had.
+monitor has to catch the fault and drop the channel. The "with the monitor"
+column refits the threshold for the model without that channel.
+`GesturePipeline` doesn't: it keeps the full model's threshold, which delivers
+90.2% [89.2, 91.1] with an electrode off (1.38 gestures per set), so nothing
+needs refitting when an electrode fails.
+
+The [live demo](demo/index.html) plays all of this back on four MultiDay
+days, with the textbook recipe and an electrode failure a click away.
 
 ## Caveats
 

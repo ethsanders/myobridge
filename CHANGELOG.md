@@ -18,6 +18,17 @@ All notable changes to myobridge. The format follows
 - `myobridge bench conformal`: whether that promise holds across 91 later
   days (MultiDay), a 5 minute break and new people (3DC), and electrode
   faults, with a recipe that does.
+- The demo opens on the promise: four MultiDay days played back with live
+  gesture sets and a running score, the textbook recipe and a lifted
+  electrode a click away. `myobridge bench demo` writes what it plays
+  (results/demo.json: decoded sets only, no EMG, 30 KB gzipped). The live
+  3DC part now shows sets too, with a switch for the quality monitor.
+- `Replay(alpha=...)` gives every window a conformal set and counts how the
+  sets do; `Replay.drop_flagged()` turns the monitor's channel dropping off
+  and on.
+- `bench conformal` also measures what `GesturePipeline` does when an
+  electrode fails (keeps the full model's threshold): 90.2% at 90% with an
+  electrode off.
 - `myobridge bench partial_calibration`: whether a day can be recalibrated
   from rest alone, or rest plus a gesture or two (mostly it can't).
 - A richer default feature set, `td-ar-psd`: the Hudgins time-domain

@@ -5,14 +5,24 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/ethsanders/myobridge/blob/main/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/ethsanders/myobridge/blob/main/LICENSE)
 
-myobridge reads the electrical activity of forearm muscles and turns it into
-hand gestures, live. An ESP32 streams four EMG sensors over WiFi, and a
-Python library filters the signal, decodes the gesture and passes it on to a
-game engine or a recorder. It also measures how well that works on public
-datasets, including the things that usually go wrong: models going stale
-from one day to the next, new users, and electrodes coming loose.
+**It tells you when it doesn't know, and that promise holds across 91 days.**
 
-![A real forearm recording decoded live; halfway through, an electrode is pulled off and the decoder carries on without it](https://raw.githubusercontent.com/ethsanders/myobridge/main/docs/figures/demo.gif)
+myobridge turns the electrical activity of forearm muscles (EMG) into hand
+gestures, live. Instead of one guess for every 50 ms of signal, it can answer
+with a set of gestures that holds the right one 90% of the time: one gesture
+when it's sure, two or three when it's torn. On one person recorded over
+months, with the electrodes taken off and put back on every day, that
+promise delivers 89.1% [88.7, 89.4] on 91 later days. Set the textbook way
+on the original decoder, it delivers 74.6%.
+
+![One recorded day: the decoder's sets, then the textbook recipe making confident mistakes, then an electrode coming off with and without the quality monitor](https://raw.githubusercontent.com/ethsanders/myobridge/main/docs/figures/sets.gif)
+
+The rest is the plumbing that makes it usable: an ESP32 streams four EMG
+sensors over WiFi, and a Python library filters the signal, watches every
+electrode, decodes the gesture and passes it on to a game engine or a
+recorder. It also measures how well all of that works on public datasets,
+including the things that usually go wrong: models going stale from one day
+to the next, new users, and electrodes coming loose.
 
 **[Try the live demo](https://ethsanders.github.io/myobridge/demo/)** in
 your browser (real recordings, nothing to install) ·

@@ -1,5 +1,12 @@
 # myobridge
 
+**It tells you when it doesn't know, and that promise holds across 91 days.**
+A decoded gesture comes with a set that holds the right one 90% of the time,
+and on one person over months, with the electrodes put back on every day, it
+delivers 89.1% ([how](conformal.md)).
+
+![One recorded day: the decoder's sets, the textbook recipe, and an electrode coming off](figures/sets.gif)
+
 myobridge turns the electrical activity of forearm muscles into hand
 gestures, live. It covers the whole path: firmware that streams four EMG
 sensors from an ESP32 over WiFi, a Python library that cleans the signal and
@@ -17,8 +24,8 @@ quality monitor drops it and the decoder keeps going on the other three.*
 
 - **[Try the live demo](demo/index.html)**
 
-    Real forearm recordings decoded in your browser. Break an electrode and
-    watch what happens. Nothing to install.
+    Watch the promise hold, break and recover on real recordings, then break
+    an electrode yourself. Nothing to install.
 
 - **[Get started](getting-started.md)**
 

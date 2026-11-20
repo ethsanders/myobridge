@@ -149,6 +149,8 @@ def test_conformal() -> None:
     for doc in (README, RESULTS_MD, CONFORMAL_MD):
         assert_quoted(_text(doc), pct(head["coverage"]["mean"]), ci(head["coverage"]))
     assert_quoted(_text(README), pct(head["accuracy_when_singleton"]))
+    assert_quoted(_text(README), pct(textbook["coverage"]["mean"]))
+    assert_quoted(_text("docs/index.md"), pct(head["coverage"]["mean"]))
     for doc in (RESULTS_MD, CONFORMAL_MD):
         assert_quoted(_text(doc), pct(textbook["coverage"]["mean"]), ci(textbook["coverage"]))
     page = _text(CONFORMAL_MD)
@@ -170,6 +172,12 @@ def test_conformal() -> None:
         text = _text(doc)
         for r in (within, cross, lead["monitor"]["0.1"], lead["no_monitor"]["0.1"]):
             assert_quoted(text, pct(r["coverage"]["mean"]), ci(r["coverage"]))
+    shared = lead["monitor_shared_threshold"]["0.1"]
+    assert_quoted(
+        page,
+        f"{pct(shared['coverage']['mean'])} {ci(shared['coverage'])}",
+        f"{shared['mean_set_size']:.2f} gestures",
+    )
     tail = d["multiday"]["without_last_second_of_hold"]
     for doc in (RESULTS_MD, CONFORMAL_MD):
         assert_quoted(
@@ -207,3 +215,32 @@ def test_readme_example_runs() -> None:
     start = text.index("```python\n") + len("```python\n")
     code = text[start : text.index("```", start)]
     exec(compile(code, "README.md", "exec"), {})
+
+
+def test_demo_payload_matches_the_benchmark() -> None:
+    """The demo page reads docs/demo/days.json, a link to results/demo.json."""
+    link = DOCS / "demo" / "days.json"
+    assert link.resolve() == (ROOT / "results" / "demo.json").resolve()
+    demo = json.loads(link.read_text())
+    conf = _load("conformal")
+    md, h = conf["multiday"]["rows"], demo["headline"]
+    for key, row in (
+        ("adapt-myobridge", "adapt_temp_aps"),
+        ("adapt-textbook", "adapt_validation_days"),
+        ("static-myobridge", "static_temp_aps"),
+        ("static-textbook", "static_validation_days"),
+    ):
+        assert h["multiday"][key]["mean"] == md[row]["0.1"]["coverage"]["mean"]
+    lead = conf["threedc"]["faults"]["results"]["lead_off"]
+    assert h["threedc_lead_off"]["no_monitor"] == lead["no_monitor"]["0.1"]["coverage"]["mean"]
+    assert h["threedc_temperature"] == conf["threedc"]["within_sitting"]["temperature"]
+    assert demo["typical_day"] in [d["day"] for d in demo["days"]]
+    # the textbook rows don't depend on a random draw, so they match day by day
+    for d in demo["days"]:
+        n = len(d["truth"])
+        for variant, row in (
+            ("static-textbook-ok", "static_validation_days"),
+            ("adapt-textbook-ok", "adapt_validation_days"),
+        ):
+            got = d["variants"][variant]["check"]["covered"] / n
+            assert abs(got - md[row]["0.1"]["per_group"][str(d["day"])]["coverage"]) < 1e-6
