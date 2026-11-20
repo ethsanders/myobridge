@@ -692,7 +692,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "names",
         nargs="*",
-        help="multiday threedc aliasing quality latency conformal (default: all)",
+        help="multiday threedc aliasing quality latency conformal partial_calibration"
+        " (default: all)",
     )
     s.add_argument("--data", help="folder for datasets (default: $MYOBRIDGE_DATA)")
     s.add_argument("--out", default="results", help="where to write the JSON results")

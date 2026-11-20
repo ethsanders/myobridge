@@ -15,6 +15,7 @@ from . import (
     conformal_bench,
     latency_bench,
     multiday_bench,
+    partial_bench,
     quality_bench,
     threedc_bench,
 )
@@ -27,6 +28,7 @@ EXPERIMENTS: dict[str, Callable[[RunOptions], dict[str, Any]]] = {
     "quality": quality_bench.run,
     "latency": latency_bench.run,
     "conformal": conformal_bench.run,
+    "partial_calibration": partial_bench.run,
 }
 
 __all__ = ["EXPERIMENTS", "RunOptions", "run"]

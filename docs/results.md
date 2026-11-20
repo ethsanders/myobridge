@@ -164,6 +164,16 @@ test day itself, with no older data, scores 87.9%.
   moves the means, which they change a lot. It wins at every length, and with
   1 s per gesture it beats a same-day model trained on more data.
 
+**Rest alone isn't enough.** A daily calibration that asked only for rest
+would be much easier for a user. Moving every class mean by the shift that
+rest shows recovers 3.1 points [2.5, 3.7] with 1 s of rest, against 15.5
+for `adapt()` with every gesture. Adding two more gestures (key grip and
+index point, chosen on days 11-30) and giving those their own new means
+reaches 82.4%, and one shift estimated from all 11 gestures only 80.0%. One
+shared shift explains 21.3% [20.1, 22.5] of how the class means move from
+day to day; most of the drift is specific to each gesture. Numbers from
+`myobridge bench partial_calibration`, in `results/partial_calibration.json`.
+
 **Where the errors are.** Most of the adapted model's mistakes come at the
 end of a hold. The last second of each hold is 26.8% of the test windows;
 without it, the adapted model scores 96.7% and the base model 77.4%. The

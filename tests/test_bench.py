@@ -212,3 +212,60 @@ def test_conformal_quick(data, tmp_path):
     assert set(flt) == {"clean", "no_monitor", "monitor", "oracle_drop"}
     saved = json.loads((tmp_path / "results" / "conformal.quick.json").read_text())
     assert saved["datasets"]["3dc"]["commit"] == out["datasets"]["3dc"]["commit"]
+
+
+def test_partial_calibration_quick(data, tmp_path):
+    from myobridge.bench import partial_bench as pb
+
+    out = bench.EXPERIMENTS["partial_calibration"](opts(data, tmp_path))
+    by_s = out["by_calibration_seconds"]
+    assert set(by_s) == {str(s) for s in pb.CAL_SECONDS}
+    methods = by_s["1.0"]
+    assert set(methods) == {
+        "none",
+        "adapt_all",
+        "adapt_rest",
+        "shift_rest",
+        "gain_rest",
+        "shift_all",
+        "gain_all",
+        "hybrid_rest+1",
+        "hybrid_rest+2",
+    }
+    for name, r in methods.items():
+        assert len(r["per_day"]) == len(out["test_days"]) == 6
+        assert 0.0 <= r["test"]["mean"] <= 1.0
+        if name != "none":
+            assert r["minus_none"]["n"] == 6
+    extra = methods["hybrid_rest+2"]["extra_gestures"]
+    assert len(set(extra)) == 2 and pb.REST not in extra
+    assert extra[0] == methods["hybrid_rest+1"]["extra_gestures"][0]
+    assert out["end_of_hold"]["non_rest_holds"] > 0
+    assert 0.0 <= out["end_of_hold"]["share_predicted_rest"] <= 1.0
+    assert (tmp_path / "results" / "partial_calibration.quick.json").exists()
+
+
+def test_partial_shift_and_hybrid_by_hand():
+    from myobridge.bench import partial_bench as pb
+    from myobridge.evaluation import FeatureTable
+
+    rng = np.random.default_rng(0)
+    X = np.vstack([rng.normal(c * 3.0, 1.0, size=(50, 2)) for c in range(3)])
+    y = np.repeat([0, 1, 2], 50)
+    base = LDAClassifier().fit(X, y)
+    n = 30
+    offset = np.array([1.0, -2.0])
+    cal_X = np.vstack([np.tile(base.means_[0] + offset, (n, 1)), base.means_[1] + 5])
+    cal_y = np.r_[np.zeros(n, int), np.ones(1, int)]
+    z = np.zeros(len(cal_y))
+    zi = np.zeros(len(cal_y), dtype=np.intp)
+    cal = FeatureTable(cal_X, cal_y, zi, zi, zi, zi, z, z + 0.2, n_channels=1)
+    # all classes move by rest's offset, shrunk by n / (n + prior)
+    moved = pb.shared_shift(base, cal, [0], prior=10.0)
+    np.testing.assert_allclose(moved.means_, base.means_ + offset * n / (n + 10.0))
+    # the calibrated classes get their own means, the others the shared shift
+    hyb = pb.hybrid(base, cal, [0, 1], prior=0.0)
+    np.testing.assert_allclose(hyb.means_[0], base.means_[0] + offset)
+    np.testing.assert_allclose(hyb.means_[1], base.means_[1] + 5)
+    shared = (n * offset + 1 * np.array([5.0, 5.0])) / (n + 1)
+    np.testing.assert_allclose(hyb.means_[2], base.means_[2] + shared)

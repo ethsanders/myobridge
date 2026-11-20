@@ -186,6 +186,21 @@ def test_conformal() -> None:
     assert_quoted(page, f"{pct(seeds['min'])} to {pct(seeds['max'])}")
 
 
+def test_partial_calibration() -> None:
+    d = _load("partial_calibration")
+    one = d["by_calibration_seconds"]["1.0"]
+    share = d["shared_translation_share"]
+    rest = one["shift_rest"]["minus_none"]
+    assert_quoted(
+        _text(RESULTS_MD),
+        f"{100 * rest['mean']:.1f} points {ci(rest)}",
+        f"{100 * one['adapt_all']['minus_none']['mean']:.1f}",
+        pct(one["hybrid_rest+2"]["test"]["mean"]),
+        pct(one["shift_all"]["test"]["mean"]),
+        f"{pct(share['mean'])} {ci(share)}",
+    )
+
+
 def test_readme_example_runs() -> None:
     """The quick-start code in the README is real code."""
     text = _text(README)

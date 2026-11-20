@@ -18,6 +18,8 @@ All notable changes to myobridge. The format follows
 - `myobridge bench conformal`: whether that promise holds across 91 later
   days (MultiDay), a 5 minute break and new people (3DC), and electrode
   faults, with a recipe that does.
+- `myobridge bench partial_calibration`: whether a day can be recalibrated
+  from rest alone, or rest plus a gesture or two (mostly it can't).
 - A richer default feature set, `td-ar-psd`: the Hudgins time-domain
   features plus 4th-order autoregressive coefficients and the TD-PSD
   spectral moments, 15 per channel. The old 5-feature set is still
