@@ -48,15 +48,17 @@ class GesturePipeline:
         # Windows are `step` samples apart; the newest ended `since_last` samples ago.
         step = self.windower.step
         last_end = self.samples_seen - self.windower.since_last
+        _, _, classes = self.model._check_fitted()
+        names = [str(c) for c in classes]  # labels may be ints or strings
         for i, window in enumerate(windows):
             proba = self.model.predict_proba(extract_features(window))[0]
-            label = str(self.model.classes_[np.argmax(proba)])
+            label = names[int(np.argmax(proba))]
             voted = self.vote.update(label)
             predictions.append(
                 Prediction(
                     gesture=voted,
                     raw_gesture=label,
-                    confidence=float(proba[list(self.model.classes_).index(voted)]),
+                    confidence=float(proba[names.index(voted)]),
                     sample_index=last_end - (len(windows) - 1 - i) * step,
                 )
             )
