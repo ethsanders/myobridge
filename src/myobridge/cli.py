@@ -15,6 +15,7 @@ import numpy as np
 from . import __version__
 from .classifier import LDAClassifier, calibrate
 from .dsp import EmgFilter
+from .lsl import LslOutlets
 from .pipeline import GesturePipeline
 from .protocol import Packet, SequenceTracker, decode_packet
 from .quality import QualityReport
@@ -264,6 +265,37 @@ def calibrate_live(
 # -------------------------------------------------------------------- forward
 
 
+def forward_pipeline(model: LDAClassifier, packet: Packet, mains_hz: float) -> GesturePipeline:
+    """A live pipeline for `packet`'s stream, set up the way `model` was trained.
+
+    A model trained at another sample rate would see different features, so
+    that is an error with a way out, not a silent drop in accuracy. Models
+    saved before 0.2.0 don't record their settings and use the defaults.
+    """
+    trained = model.settings
+    if trained is not None and not np.isclose(trained.fs, packet.sample_rate):
+        raise CliError(
+            f"the model was trained at {trained.fs:g} Hz but the device sends "
+            f"{packet.sample_rate} Hz; run `myobridge calibrate` again with this device"
+        )
+    try:
+        if trained is not None:
+            return GesturePipeline.from_model(model, packet.n_channels)
+        return GesturePipeline(model, packet.sample_rate, packet.n_channels, mains_hz=mains_hz)
+    except ValueError as err:
+        raise stream_error(packet, err) from None
+
+
+def open_lsl(name: str, packet: Packet) -> LslOutlets:
+    """LSL outlets for `packet`'s stream, or a CLI error saying what to install."""
+    try:
+        outlets = LslOutlets(packet.n_channels, packet.sample_rate, name=name, source_id=name)
+    except ImportError as err:
+        raise CliError(str(err)) from None
+    print(f"Publishing LSL streams {name}-emg and {name}-gestures", flush=True)
+    return outlets
+
+
 def cmd_forward(args: argparse.Namespace) -> None:
     """Live: UDP EMG in -> gesture JSON out (e.g. to a Unity app on a Quest)."""
     try:
@@ -276,17 +308,19 @@ def cmd_forward(args: argparse.Namespace) -> None:
     print(f"Sending gestures to udp://{host}:{port}")
     with open_receiver(args.port) as rx, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as out:
         pipeline, msg_seq = None, 0
+        lsl: LslOutlets | None = None
         for packet in live_packets(rx):
             if packet is None:
                 continue
             if pipeline is None:
-                try:
-                    pipeline = GesturePipeline(
-                        model, packet.sample_rate, packet.n_channels, mains_hz=args.mains
-                    )
-                except ValueError as err:
-                    raise stream_error(packet, err) from None
+                pipeline = forward_pipeline(model, packet, args.mains)
+                if args.lsl is not None:
+                    lsl = open_lsl(args.lsl, packet)
+            if lsl is not None:
+                lsl.push_emg(packet.samples)
             for pred in pipeline.process_block(packet.samples):
+                if lsl is not None:
+                    lsl.push_gesture(pred)
                 message = {
                     "type": "gesture",
                     "gesture": pred.gesture,
@@ -618,6 +652,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=host_port,
         default=f"127.0.0.1:{DEFAULT_FORWARD_PORT}",
         help="host:port to send the gesture JSON to",
+    )
+    s.add_argument(
+        "--lsl",
+        nargs="?",
+        const="myobridge",
+        metavar="NAME",
+        help="also publish the EMG and gestures on Lab Streaming Layer as NAME-emg and "
+        'NAME-gestures (default name: myobridge; needs pip install "myobridge[lsl]")',
     )
     s.add_argument("--verbose", action="store_true", help="print every message sent")
 

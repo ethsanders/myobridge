@@ -3,6 +3,7 @@ import queue
 import socket
 import threading
 import time
+import uuid
 from types import SimpleNamespace
 
 import numpy as np
@@ -12,7 +13,7 @@ import myobridge
 import myobridge.cli as cli
 from myobridge.cli import build_parser, main
 from myobridge.protocol import encode_packet
-from myobridge.simulator import EmgSimulator, run_udp
+from myobridge.simulator import GESTURES, EmgSimulator, run_udp
 
 
 class Background:
@@ -154,15 +155,51 @@ def test_forward_sends_gesture_json(model, game, receivers):
     assert 0.0 <= msg["confidence"] <= 1.0
 
 
-def test_forward_works_below_900_hz(model, game, receivers):
+def test_forward_works_below_900_hz(tmp_path, game, receivers):
+    sim = EmgSimulator(fs=500, seed=3)
+    clf, _, _ = myobridge.calibrate(sim.record, ["rest", "fist"], 2.0, 500)
+    path = tmp_path / "m500.npz"
+    clf.save(path)
     to = f"127.0.0.1:{game.getsockname()[1]}"
-    cmd = Background(["forward", "--port", "0", "--model", str(model), "--to", to])
+    cmd = Background(["forward", "--port", "0", "--model", str(path), "--to", to])
     rx = receivers.next()
     send(rx.port, noise_packets(30, fs=500))
     msg = json.loads(game.recv(1024))
     receivers.stop.set()
     cmd.join()
     assert msg["type"] == "gesture"
+
+
+def test_forward_refuses_a_model_trained_at_another_rate(model, receivers):
+    cmd = Background(["forward", "--port", "0", "--model", str(model), "--to", "127.0.0.1:9"])
+    rx = receivers.next()
+    send(rx.port, noise_packets(3, fs=500))
+    with pytest.raises(SystemExit) as exit_:
+        cmd.join()
+    assert "trained at 1000 Hz but the device sends 500 Hz" in str(exit_.value)
+
+
+def test_forward_publishes_on_lsl(model, game, receivers):
+    pylsl = pytest.importorskip("pylsl")
+    name = f"mbcli-{uuid.uuid4().hex[:8]}"
+    to = f"127.0.0.1:{game.getsockname()[1]}"
+    argv = ["forward", "--port", "0", "--model", str(model), "--to", to, "--lsl", name]
+    cmd = Background(argv)
+    rx = receivers.next()
+    send(rx.port, noise_packets(1, fs=1000))  # the outlets open on the first packet
+    found = pylsl.resolve_byprop("name", f"{name}-gestures", timeout=5)
+    if not found:
+        receivers.stop.set()
+        cmd.join()
+        pytest.skip("LSL stream discovery doesn't work on this machine's network")
+    inlet = pylsl.StreamInlet(found[0])
+    inlet.open_stream(timeout=5)
+    time.sleep(0.3)
+    send(rx.port, noise_packets(30, fs=1000, first_seq=1))
+    marker, _ = inlet.pull_sample(timeout=5)
+    receivers.stop.set()
+    cmd.join()
+    assert marker is not None and json.loads(marker[0])["gesture"] in GESTURES
 
 
 def test_listen_shows_channel_health(receivers, capsys):
