@@ -78,6 +78,7 @@ static WiFiUDP udp;
 
 static volatile uint32_t missedTicks = 0;  // sampler fell behind the timer
 static volatile uint32_t queueFull = 0;    // sender fell behind the sampler
+static uint32_t sendFailed = 0;            // udp.endPacket() failed (loop() only)
 
 // ---- Timer interrupt: runs every 1/ADC_RATE_HZ s -------------------------
 // Keep ISRs tiny. analogRead() is not safe/fast enough to call here, so the
@@ -187,7 +188,7 @@ void loop() {
   if (xQueueReceive(packetQueue, &packet, pdMS_TO_TICKS(100)) == pdTRUE) {
     udp.beginPacket(HOST_IP, HOST_PORT);
     udp.write(packet.bytes, PACKET_SIZE);
-    udp.endPacket();
+    if (!udp.endPacket()) sendFailed++;
   }
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -196,7 +197,8 @@ void loop() {
 
   if (millis() - lastReportMs > 5000) {
     lastReportMs = millis();
-    Serial.printf("missed ticks %lu, queue-full drops %lu\n",
-                  (unsigned long)missedTicks, (unsigned long)queueFull);
+    Serial.printf("missed ticks %lu, queue-full drops %lu, send failures %lu\n",
+                  (unsigned long)missedTicks, (unsigned long)queueFull,
+                  (unsigned long)sendFailed);
   }
 }
