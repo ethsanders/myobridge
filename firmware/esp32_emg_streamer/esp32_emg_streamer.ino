@@ -33,7 +33,27 @@
 
 #include <WiFi.h>
 #include <WiFiUdp.h>
+
 #include "config.h"  // copy config.example.h -> config.h first
+#include "mb_decimator.h"
+#include "mb_protocol.h"
+
+// ---- Anti-aliasing ---------------------------------------------------------
+// The MyoWare's RAW output is band-limited only by a gentle analog roll-off
+// above ~500 Hz, which is NOT a proper anti-aliasing filter for 1 kHz
+// sampling: wideband electronic noise between 500 Hz and many kHz folds into
+// the EMG band. Real EMG itself has almost no power up there, so gestures are
+// unaffected; the cost is a higher noise floor (docs/ALIASING.md models it at
+// about +3 dB for a first-order roll-off). OVERSAMPLE 2 samples at 2 kHz and
+// decimates with a halfband FIR (mb_decimator.h), cutting that to about +1 dB.
+// The PC still receives 1 kHz. OVERSAMPLE 2 is untested on hardware: measure
+// the rest-noise floor both ways during bring-up (docs/HARDWARE_BRINGUP.md).
+#ifndef OVERSAMPLE
+#define OVERSAMPLE 1
+#endif
+#if OVERSAMPLE != 1 && OVERSAMPLE != 2
+#error "OVERSAMPLE must be 1 or 2"
+#endif
 
 // ---- Acquisition settings (keep in sync with what the PC expects) ----------
 static const uint8_t NUM_CHANNELS = 4;
@@ -42,13 +62,9 @@ static const uint16_t SAMPLE_RATE_HZ = 1000;
 static const uint16_t FRAMES_PER_PACKET = 20;  // 20 ms of data per packet
 static const int ADC_MIDPOINT = 2048;           // 12-bit ADC, RAW idles at Vcc/2
 
-// ---- Wire protocol (see docs/PROTOCOL.md) ----------------------------------
-static const uint8_t MAGIC_0 = 'M';
-static const uint8_t MAGIC_1 = 'B';
-static const uint8_t PROTOCOL_VERSION = 1;
-static const size_t HEADER_SIZE = 20;
-static const size_t PAYLOAD_SIZE = (size_t)NUM_CHANNELS * FRAMES_PER_PACKET * 2;
-static const size_t PACKET_SIZE = HEADER_SIZE + PAYLOAD_SIZE + 2;  // +2 = CRC
+static const uint32_t ADC_RATE_HZ = (uint32_t)SAMPLE_RATE_HZ * OVERSAMPLE;
+static const size_t PACKET_SIZE = mb::HEADER_SIZE + (size_t)NUM_CHANNELS * FRAMES_PER_PACKET * 2 +
+                                  mb::CRC_SIZE;  // wire format: docs/PROTOCOL.md
 
 struct Packet {
   uint8_t bytes[PACKET_SIZE];
@@ -63,45 +79,7 @@ static WiFiUDP udp;
 static volatile uint32_t missedTicks = 0;  // sampler fell behind the timer
 static volatile uint32_t queueFull = 0;    // sender fell behind the sampler
 
-// ---- Little-endian helpers (write the low byte first) ----------------------
-static void putU16(uint8_t *buf, size_t at, uint16_t v) {
-  buf[at] = v & 0xFF;
-  buf[at + 1] = v >> 8;
-}
-
-static void putU32(uint8_t *buf, size_t at, uint32_t v) {
-  for (int i = 0; i < 4; i++) buf[at + i] = (v >> (8 * i)) & 0xFF;
-}
-
-static void putU64(uint8_t *buf, size_t at, uint64_t v) {
-  for (int i = 0; i < 8; i++) buf[at + i] = (v >> (8 * i)) & 0xFF;
-}
-
-// CRC-16/CCITT-FALSE: poly 0x1021, init 0xFFFF, MSB first, no final XOR.
-// Must match protocol.crc16_ccitt_false() in Python ("123456789" -> 0x29B1).
-static uint16_t crc16CcittFalse(const uint8_t *data, size_t len) {
-  uint16_t crc = 0xFFFF;
-  for (size_t i = 0; i < len; i++) {
-    crc ^= (uint16_t)data[i] << 8;
-    for (int bit = 0; bit < 8; bit++) {
-      crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
-    }
-  }
-  return crc;
-}
-
-static void writeHeader(uint8_t *buf, uint32_t seq, uint64_t timestampUs) {
-  buf[0] = MAGIC_0;
-  buf[1] = MAGIC_1;
-  buf[2] = PROTOCOL_VERSION;
-  buf[3] = NUM_CHANNELS;
-  putU16(buf, 4, SAMPLE_RATE_HZ);
-  putU32(buf, 6, seq);
-  putU64(buf, 10, timestampUs);
-  putU16(buf, 18, FRAMES_PER_PACKET);
-}
-
-// ---- Timer interrupt: runs every 1 ms --------------------------------------
+// ---- Timer interrupt: runs every 1/ADC_RATE_HZ s -------------------------
 // Keep ISRs tiny. analogRead() is not safe/fast enough to call here, so the
 // ISR only wakes the sampler task, which does the actual reading.
 void ARDUINO_ISR_ATTR onSampleTimer() {
@@ -116,27 +94,48 @@ static void samplerLoop(void *) {
   uint32_t seq = 0;
   uint16_t frame = 0;
   uint64_t firstSampleUs = 0;
+#if OVERSAMPLE == 2
+  static mb::HalfbandDecimator<NUM_CHANNELS> decimator;
+  int16_t pending[NUM_CHANNELS];
+  bool havePending = false;
+#endif
 
   for (;;) {
     // Sleep until the ISR "gives". The return value counts gives since we
     // last woke: more than 1 means we missed ticks (should never happen).
     uint32_t ticks = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     if (ticks > 1) missedTicks += ticks - 1;
+    uint64_t nowUs = (uint64_t)esp_timer_get_time();
 
-    if (frame == 0) firstSampleUs = (uint64_t)esp_timer_get_time();
-
-    size_t at = HEADER_SIZE + (size_t)frame * NUM_CHANNELS * 2;
+    int16_t raw[NUM_CHANNELS];
     for (uint8_t ch = 0; ch < NUM_CHANNELS; ch++) {
       // Centre around zero so the samples are signed, like the EMG itself.
-      int16_t sample = (int16_t)(analogRead(CHANNEL_PINS[ch]) - ADC_MIDPOINT);
-      putU16(packet.bytes, at, (uint16_t)sample);
-      at += 2;
+      raw[ch] = (int16_t)(analogRead(CHANNEL_PINS[ch]) - ADC_MIDPOINT);
+    }
+
+    int16_t out[NUM_CHANNELS];
+#if OVERSAMPLE == 2
+    if (!havePending) {  // first of a pair: wait for the second
+      for (uint8_t ch = 0; ch < NUM_CHANNELS; ch++) pending[ch] = raw[ch];
+      havePending = true;
+      continue;
+    }
+    havePending = false;
+    decimator.push(pending, raw, out);
+#else
+    for (uint8_t ch = 0; ch < NUM_CHANNELS; ch++) out[ch] = raw[ch];
+#endif
+
+    // With OVERSAMPLE 2 the timestamp is when the newest input sample of this
+    // output was read; the filter's delay is 23 input samples (11.5 ms).
+    if (frame == 0) firstSampleUs = nowUs;
+    for (uint8_t ch = 0; ch < NUM_CHANNELS; ch++) {
+      mb::putSample(packet.bytes, NUM_CHANNELS, frame, ch, out[ch]);
     }
 
     if (++frame == FRAMES_PER_PACKET) {
-      writeHeader(packet.bytes, seq, firstSampleUs);
-      uint16_t crc = crc16CcittFalse(packet.bytes, PACKET_SIZE - 2);
-      putU16(packet.bytes, PACKET_SIZE - 2, crc);
+      mb::finishPacket(packet.bytes, NUM_CHANNELS, SAMPLE_RATE_HZ, seq, firstSampleUs,
+                       FRAMES_PER_PACKET);
       // Don't wait if the queue is full: dropping a packet is better than
       // stalling the sampler. seq still advances, so the PC sees the gap.
       if (xQueueSend(packetQueue, &packet, 0) != pdTRUE) queueFull++;
@@ -174,10 +173,10 @@ void setup() {
                           configMAX_PRIORITIES - 2, &samplerTask, 1);
 
   // Core 3.x timer API: 1 MHz tick (1 us resolution), alarm every
-  // 1e6 / SAMPLE_RATE_HZ ticks, auto-reload forever (reload_count 0).
+  // 1e6 / ADC_RATE_HZ ticks, auto-reload forever (reload_count 0).
   sampleTimer = timerBegin(1000000);
   timerAttachInterrupt(sampleTimer, &onSampleTimer);
-  timerAlarm(sampleTimer, 1000000 / SAMPLE_RATE_HZ, true, 0);
+  timerAlarm(sampleTimer, 1000000 / ADC_RATE_HZ, true, 0);
 }
 
 void loop() {
