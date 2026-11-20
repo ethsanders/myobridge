@@ -1,7 +1,8 @@
-# How myobridge works (interview prep)
+# How myobridge works
 
 Plain-language notes on every piece: what it does, why it's built that way,
-and the numbers behind it. If you can explain this page, you can explain the repo.
+and the numbers behind it. Measured results on public datasets are in
+[RESULTS.md](RESULTS.md); this page explains the machinery.
 
 ## The big picture
 
@@ -33,17 +34,25 @@ skin -> MyoWare (amp) -> ESP32 ADC (1 kHz) -> UDP -> receiver -> bandpass -> not
 | `features.py` | MAV, RMS, waveform length, zero crossings, slope sign changes. | The classic Hudgins time-domain set: cheap, robust, well studied. |
 | `classifier.py` | LDA, calibration, majority vote. | Closed-form, fast, small-data friendly. |
 | `pipeline.py` | Ties filter + windower + features + LDA + vote together. | Same code path for the demo, `forward`, and the plot script. |
-| `cli.py` | `simulate`, `listen`, `calibrate`, `forward`, `demo`. | Thin wrappers around the above. |
+| `quality.py` | Per-channel health checks: flatline, clipping, mains hum, motion. | A dead or saturated electrode silently ruins a classifier; flagging it lets the decoder fall back to the healthy channels ([SIGNAL_QUALITY.md](SIGNAL_QUALITY.md)). |
+| `decimator.py` + `firmware/.../mb_decimator.h` | Optional 2x oversampling with a 47-tap integer halfband filter. | Lowers the aliased noise floor; the Python copy is the bit-exact reference the C++ is tested against ([ALIASING.md](ALIASING.md)). |
+| `aliasing.py` | Model of how much wideband noise folds into the band. | Turns "is 1 kHz enough?" into a number. |
+| `datasets/`, `evaluation.py`, `bench/` | Download public datasets at pinned commits, split them honestly, run every experiment. | Every number in the README comes from `myobridge bench` ([DATASETS.md](DATASETS.md)). |
+| `cli.py` | `simulate`, `listen`, `calibrate`, `forward`, `demo`, `fetch`, `bench`. | Thin wrappers around the above. |
 
 ## The signal chain, with numbers
 
 **Sampling at 1 kHz.** Nyquist: to capture frequencies up to *f* you must
 sample faster than 2*f*. Surface EMG has useful content up to ~450-500 Hz, so
-1 kHz is the minimum sensible rate (research systems often use 2 kHz). The
-MyoWare's own analog filtering rolls off the high end, which acts as a gentle
-anti-aliasing filter (a steeper one is a job for a custom front end).
-The ESP32's ADC is 12-bit (0-4095); we subtract 2048
-so the samples are signed.
+1 kHz is the minimum sensible rate (research systems often use 2 kHz).
+Nyquist also cuts the other way: anything *above* 500 Hz that reaches the ADC
+folds back into 0-500 Hz. The MyoWare's analog filter rolls off only gently
+there, so it is **not** a real anti-aliasing filter. EMG itself has almost no
+power above 500 Hz (about 0.1% in the 2 kHz MultiDay recordings), so gestures
+survive, but amplifier noise folds in and raises the noise floor.
+[ALIASING.md](ALIASING.md) puts numbers on it and describes the fix in the
+firmware: sample at 2 kHz and filter digitally down to 1 kHz (`OVERSAMPLE 2`).
+The ESP32's ADC is 12-bit (0-4095); we subtract 2048 so the samples are signed.
 
 **Bandpass 20-450 Hz (4th-order Butterworth, so 8th order overall).**
 - Below 20 Hz is mostly *motion artefact* (cables and skin moving) and
@@ -147,22 +156,24 @@ step, shorter window (each trades stability for speed).
   scaled by made-up per-channel activation patterns. Real signals have motion
   artefacts, cross-talk between neighbouring muscles, fatigue (spectrum shifts
   lower over minutes), sweat changing impedance, and cable noise.
-- **Real accuracy will be lower** than the demo's ~95%, especially across
-  sessions. Recalibrating at the start of each session (a minute of data)
-  is normal practice; LDA trains in milliseconds so that's cheap.
+- **The demo's accuracy says nothing about real EMG.** On public data the
+  same pipeline gets 90.6% within one sitting and 72.8% on later days without
+  recalibration ([RESULTS.md](RESULTS.md)). A second per gesture at the start
+  of each session, through `adapt()`, brings it back to 86.7%, and it takes
+  well under a millisecond.
 - **Electrode placement matters more than the algorithm.** Shift the band 1 cm
   and the patterns change. Mark positions on the skin; put electrodes along
   the muscle fibres over the belly; reference on bone.
 - **The ESP32 ADC is mediocre:** nonlinear near the rails, noisy, with
   per-chip offsets. Fine for a prototype; a dedicated ADC (ADS1299, ADS131) is
   on the roadmap.
-- Only the 60 Hz fundamental is notched; harmonics (120, 180 Hz) pass through.
-  Battery power and short leads keep them small.
+- Only the mains fundamental (50 or 60 Hz) is notched; its harmonics pass
+  through. Battery power and short leads keep them small.
 - Lost packets leave a gap in time that the filters don't know about.
   At ~1% loss this barely matters; a heavier-loss link would want
   zero-filling or interpolation.
 
-## Likely interview questions
+## Design questions, answered
 
 1. **Why UDP and not TCP?**
    For real-time control, old data is useless. TCP retransmits and blocks
@@ -175,11 +186,13 @@ step, shorter window (each trades stability for speed).
    device rebooted. All math is mod 2³² so wraparound isn't a special case. The
    `listen` command shows the live loss %.
 
-3. **Why sample at 1 kHz?**
-   Surface EMG has content up to ~450-500 Hz; Nyquist says sample at more than
-   twice the highest frequency, so 1 kHz is the minimum. The MyoWare's analog
-   filtering rolls off the high end and acts as a gentle anti-alias filter; a
-   steeper one belongs on the custom front-end PCB.
+3. **Why sample at 1 kHz? Isn't that aliasing?**
+   Surface EMG has content up to ~450-500 Hz, so 1 kHz is the minimum rate.
+   The catch is that the MyoWare doesn't filter hard enough above 500 Hz, so
+   wideband noise up there folds into the band. The EMG itself barely
+   suffers, because it has little power above 500 Hz, but the noise floor
+   rises. The firmware can sample at 2 kHz and decimate with a halfband FIR
+   instead, which the model says removes most of that. See ALIASING.md.
 
 4. **Why a 20-450 Hz bandpass and a 60 Hz notch?**
    Below 20 Hz is motion artefact and drift, above 450 Hz is mostly noise.

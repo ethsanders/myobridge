@@ -2,177 +2,235 @@
 
 [![CI](https://github.com/ethsanders/myobridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ethsanders/myobridge/actions/workflows/ci.yml)
 
-**Stream multi-channel EMG from an ESP32 over UDP, clean it in real time, and turn muscle activity into gestures you can feed to Unity / a Quest headset.**
+**An open EMG gesture pipeline, from an ESP32 forearm band to a game engine,
+benchmarked on public data with honest splits.**
 
-A small, readable sensor-to-XR bridge: firmware that samples MyoWare 2.0 muscle
-sensors at 1 kHz, a tiny CRC-checked UDP protocol, streaming DSP, classic EMG
-features, and a from-scratch LDA classifier. A built-in simulator means the
-whole pipeline runs (and is tested) without any hardware.
+myobridge streams surface EMG from MyoWare 2.0 sensors on an ESP32 over WiFi,
+cleans it in real time, decodes hand and wrist gestures with a small linear
+classifier, and sends them to Unity or a Quest headset. Around that core it
+answers the questions that decide whether a wearable like this works in
+practice, each with a measured number:
+
+- **How fast does a gesture model go stale across days, and how little new
+  data brings it back?**
+- **What happens with a new person?**
+- **What does using only 4 sensors cost?**
+- **What happens when an electrode falls off mid-session?**
+- **Does sampling at 1 kHz behind the MyoWare's gentle filter alias?**
+
+## Results
+
+Measured on two public datasets: 3DC (22 people, 10 channels, 1 kHz) and
+MultiDay (1 person, 121 days, 4 channels). Splits are by recording, day or
+person; every setting was chosen on separate validation days or people
+([DATASETS.md](docs/DATASETS.md)). Brackets are 95% bootstrap intervals.
+All 11 gestures; chance is 9%.
+
+| Question | Result |
+|---|---|
+| Same person, same sitting, 10 channels | **90.6%** [88.5, 92.6] |
+| Only 4 channels, spread evenly | **80.8%** [78.2, 83.5] |
+| Model from days 1-10, used on days 31-121 | **72.8%** [70.9, 74.6] |
+| ... plus 1 s per gesture from that day, with `adapt()` | **86.7%** [85.7, 87.6] (+13.9 points [12.6, 15.4]) |
+| New person, no calibration | **34.8%** |
+| ... with 2 s per gesture from them | **75.1%** |
+| One electrode falls off, no monitor | **32.9%** [31.0, 34.9] |
+| ... with the quality monitor dropping it | **89.3%** [88.4, 90.1] (no fault: 90.5%) |
+| Folded noise at 1 kHz behind a 1st-order roll-off | +2.9 dB; **+1.0 dB** with the firmware's `OVERSAMPLE 2` |
+| Processing time per 20 ms packet | **78 µs** median, 166 µs p99 (0.5% of real time) |
+
+![Accuracy decays over days; a second of recalibration per gesture brings it back](docs/figures/multiday_recalibration.png)
+
+What I took from these, in one line each (details in
+[RESULTS.md](docs/RESULTS.md)):
+
+- **Drift across days is the real problem, and it is cheap to fix.** A model
+  loses about 7 points within a month and 11 within three. Blending a second
+  per gesture of the day's data into the old model (`classifier.adapt`) beats both the old model and
+  a model trained on the new data alone at every calibration length.
+- **Across people, old data barely helps.** With 2 s per gesture from a new
+  person, starting from 21 other people's model adds only 1.1 points
+  [0.2, 2.0] over training on their data alone. Plan for calibration.
+- **4 sensors cost about 10 points** against 10 around the forearm, for 11
+  gestures. Fewer gestures, or careful placement, recover some of it.
+- **A dead electrode is catastrophic and easy to catch.** One lifted electrode drops
+  accuracy from 90.5% to 32.9% (a clipping one, to 21.9%). The monitor flags
+  it within about a second, and switching to a model without that channel
+  recovers 89.3% (86.9% for clipping).
+- **The EMG doesn't alias; the noise does.** Real forearm EMG typically has under
+  0.2% of its power above 512 Hz, so accuracy is unchanged even with no
+  anti-aliasing at all. Wideband amplifier noise is another story, which is
+  why the firmware can oversample ([ALIASING.md](docs/ALIASING.md)).
+
+Reproduce every number and figure:
+
+```bash
+pip install -e ".[dev]"
+myobridge fetch     # clones both datasets at pinned commits (~4 GB)
+myobridge bench     # writes results/*.json and docs/figures/*.png, ~25 min
+```
+
+## How it works
 
 ```mermaid
 flowchart LR
-    A["ESP32 + MyoWare 2.0<br/>4 ch @ 1 kHz"] -- "UDP, 182-byte packets<br/>seq + CRC-16" --> B["Receiver<br/>validate, loss stats"]
-    S["Simulator<br/>(no hardware)"] -. "same packets" .-> B
-    B --> C["DSP (streaming)<br/>20-450 Hz bandpass<br/>60 Hz notch, RMS"]
+    A["ESP32 + 4x MyoWare 2.0<br/>1 kHz (or 2 kHz + halfband FIR)"] -- "UDP, 182-byte packets<br/>seq + CRC-16" --> B["Receiver<br/>validate, loss stats"]
+    S["Simulator / public datasets"] -. "same samples" .-> B
+    B --> Q["Quality monitor<br/>flatline, clipping,<br/>hum, motion"]
+    B --> C["Streaming DSP<br/>20-450 Hz bandpass<br/>mains notch"]
     C --> D["Features<br/>MAV RMS WL ZC SSC<br/>200 ms windows"]
-    D --> E["LDA<br/>+ majority vote"]
-    E --> F["Gesture JSON<br/>UDP :5006"]
+    Q -- "drop bad channels" --> E
+    D --> E["LDA<br/>+ adapt() recalibration<br/>+ majority vote"]
+    E --> F["Gesture JSON over UDP"]
     F --> G["Unity / Quest app"]
 ```
 
-![Simulated EMG: raw vs filtered vs envelope with predicted gestures](docs/demo.png)
+- **Firmware** (`firmware/esp32_emg_streamer/`): a hardware timer wakes a
+  FreeRTOS sampler task; a queue hands finished packets to the WiFi sender, so
+  a slow send drops a packet visibly instead of disturbing the sample clock.
+  The packet format and the optional decimation filter live in plain C++
+  headers that CI compiles with g++ and checks bit for bit against the Python.
+- **Protocol** ([PROTOCOL.md](docs/PROTOCOL.md)): UDP, a sequence number and
+  a CRC-16 per packet. Late data is useless for control, so lost packets are
+  counted, not retransmitted.
+- **Signal chain**: streaming Butterworth bandpass and mains notch (state
+  carried between packets, so chunked output equals one-shot), the Hudgins
+  time-domain features, and a from-scratch numpy LDA.
+- **Recalibration**: `adapt()` shrinks the stored class means toward the new
+  day's and blends the covariance, with two settings chosen on validation
+  data. It has a closed form, so it takes about 0.14 ms.
+- **Quality monitor** ([SIGNAL_QUALITY.md](docs/SIGNAL_QUALITY.md)): four
+  per-channel checks every 250 ms, thresholds set to about 1% false alarms on
+  validation people, and a decoder that falls back to models trained without
+  the failed channels.
 
-## Quickstart
+[HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) walks through every piece and the
+reasoning behind it.
 
-```bash
-git clone https://github.com/ethsanders/myobridge && cd myobridge
-pip install -e .            # numpy + scipy only
-myobridge demo              # fully offline: simulate -> DSP -> features -> LDA -> evaluate
-```
-
-Real output of `myobridge demo` (Python 3.13, Linux container):
-
-```text
-myobridge demo: simulated 4-channel EMG, nothing leaves this process
-
-[1/4] Wire protocol: 2000 packets, 1% simulated loss + random bit flips
-      received 1986, corrupt 14 (caught by CRC), missing seq numbers 41 (2.02%), reordered 0
-
-[2/4] Calibration: 8 s per gesture (rest, fist, open, flex, extend)
-      760 windows x 20 features, LDA training accuracy 100.0%
-
-[3/4] Held-out session (new seed): 3 x 5 gestures, 3 s each, streamed in 20-sample packets
-      windows: 897
-      accuracy, every window:          94.8%
-      accuracy, majority vote (k=5):   92.8%  (steadier output, but lags ~100 ms at each switch)
-      accuracy, steady-state windows:  99.8%  (excludes ~300 ms after each switch)
-
-      confusion matrix (rows = true, cols = predicted, every window)
-                extend    fist    flex    open    rest
-        extend     171       3       6       0       0
-          fist       0     173       5       0       2
-          flex       0       3     170       7       0
-          open       2      11       0     167       0
-          rest       8       0       0       0     169
-
-[4/4] Processing latency per 20-sample block (filter+features+LDA+vote)
-      mean 126 us, median 99 us, p99 213 us, max 509 us (budget: 20000 us per block)
-```
-
-Accuracy is on a *different simulator seed* than training. The misses are
-almost all in the ~300 ms after a gesture switch, when a 200 ms window
-straddles two gestures. Simulated data is far cleaner than a real forearm, so
-expect lower numbers with hardware (see [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)).
-
-### Live, with or without hardware
+## Try it without hardware
 
 ```bash
-# terminal 1: a fake armband (or flash the ESP32 and skip this)
-myobridge simulate --port 5005 --drop 0.01
+pip install -e .
+myobridge demo        # simulate -> packets -> DSP -> features -> LDA, offline
+```
 
-# terminal 2: live per-channel RMS bars + packet loss stats
-myobridge listen --port 5005
+The demo exercises the whole chain on a built-in simulator: packet loss and
+corruption, calibration, streaming classification and processing time. Its
+accuracy only says the plumbing works; the simulator is far cleaner than a
+real arm, so the numbers that matter are the ones above.
 
-# train a model (from the live stream; add --sim to use the simulator directly)
-myobridge calibrate --seconds 5 --out model.npz
+Live, with a fake armband in one terminal:
 
-# classify live and send gesture JSON to a game engine on :5006
+```bash
+myobridge simulate --port 5005 --drop 0.01            # or the real ESP32
+myobridge listen --port 5005                           # live RMS bars, channel health, link stats
+myobridge calibrate --seconds 5 --out model.npz        # add --sim to use the simulator directly
 myobridge forward --model model.npz --to 127.0.0.1:5006 --verbose
 ```
 
-Outside North America, add `--mains 50` before the subcommand
-(e.g. `myobridge --mains 50 listen`).
-
-Regenerate the figure with `pip install -e ".[plot]" && python scripts/make_demo_plot.py`.
+Outside North America add `--mains 50` before the subcommand, for example
+`myobridge --mains 50 listen`.
 
 ## Hardware
 
 | Part | Notes |
 |---|---|
-| ESP32 dev board (WROOM-32) | Any board with ADC1 pins 32-35 broken out |
-| 4× MyoWare 2.0 Muscle Sensor | Use the **RAW** output (bandpassed, amplified, centred at Vcc/2). ENV is pre-smoothed and loses the frequency content the features need. |
-| Snap electrodes (disposable Ag/AgCl) | 3 per sensor (two on the muscle belly along the fibres, reference on bone) |
-| LiPo + charger, or a USB power bank | **Battery only** while electrodes are on (see Safety) |
-
-Wiring, pin choices and the exact core version notes are in the comment block
-at the top of [`firmware/esp32_emg_streamer/esp32_emg_streamer.ino`](firmware/esp32_emg_streamer/esp32_emg_streamer.ino).
+| ESP32 dev board (WROOM-32) | ADC1 pins 32-35 (ADC2 can't be read while WiFi is on) |
+| 4x MyoWare 2.0 muscle sensor | The **RAW** output; ENV is pre-smoothed and loses the frequency content the features need |
+| Ag/AgCl snap electrodes | Two along each muscle belly, reference on bone |
+| LiPo or USB power bank | **Battery only** while electrodes are on (see Safety) |
 
 ```bash
 cp firmware/esp32_emg_streamer/config.example.h firmware/esp32_emg_streamer/config.h
-# edit WiFi SSID/password and your PC's IP, then build with Arduino IDE or:
+# set WiFi, your PC's IP, and OVERSAMPLE 1 or 2
 arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_emg_streamer
 ```
 
-The sketch targets **Arduino-ESP32 core 3.x** (`timerBegin(frequency)` /
-`timerAlarm(...)`; the 2.x timer API won't compile against it).
+The sketch targets Arduino-ESP32 core 3.x. Wiring notes are at the top of
+the sketch. [HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) is the checklist
+for the first sessions on real hardware, including how to measure whether
+`OVERSAMPLE 2` lowers the noise floor as predicted.
 
-## Protocol in one paragraph
+## Testing
 
-Each UDP datagram is one packet: a 20-byte little-endian header (`"MB"` magic,
-version, channel count, sample rate, u32 sequence number, u64 device timestamp in
-µs, frame count), then int16 samples interleaved by frame, then a CRC-16/CCITT-FALSE.
-The receiver rejects bad magic/version/length/CRC, and uses sequence numbers
-(modulo 2³²) to count dropped, late and duplicated packets and device restarts.
-Full spec, plus the gesture JSON format for game engines: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+```bash
+pytest                    # 170+ tests: DSP, protocol, datasets, splits, benchmarks, firmware
+ruff check . && mypy      # lint and strict typing
+```
 
-## Design decisions
+CI runs all of that on Python 3.10-3.13 with a 90% coverage floor, compiles
+the firmware for both `OVERSAMPLE` settings, and compiles the firmware
+headers with g++ to check them against the Python byte for byte. Tests that
+need data run on small fake datasets in the real file formats; the real
+datasets are only needed for `myobridge bench`.
 
-- **UDP, not TCP.** For live control, a late sample is worthless. TCP would
-  retransmit a lost packet and stall everything behind it (head-of-line
-  blocking), turning 1 lost packet into a 100+ ms freeze. UDP lets us drop it,
-  count it and move on.
-- **int16 samples.** The ESP32 ADC is 12-bit, so int16 holds every value with
-  room to spare at half the bandwidth of float32, and it's the natural type for
-  a future external 16-bit ADC.
-- **Sequence numbers.** UDP can drop, duplicate and reorder. A counter in every
-  packet is the cheapest way to *measure* link quality (you can't improve what
-  you don't measure) and to never feed stale data into the filters.
-- **LDA.** The standard baseline in the myoelectric-control literature: closed-form
-  training in milliseconds (so recalibrating when electrodes shift is painless),
-  prediction is one matrix multiply, works with little data, and is simple
-  enough to port to the ESP32 later.
-- **Streaming filter state.** Each IIR filter keeps its internal state between
-  20-sample packets (`sosfilt` with `zi`), so chunked output is bit-for-bit the
-  same as filtering the whole recording (this is tested). Without it every
-  packet boundary would inject a transient.
-- **Second-order sections.** The 8th-order bandpass is run as cascaded biquads,
-  which stays numerically stable where a single high-order polynomial wouldn't.
+## Limitations
+
+- **Not yet measured on my own hardware.** The firmware compiles and its
+  logic is tested, but every accuracy number here comes from public datasets
+  recorded with other electrodes and amplifiers. Bring-up is next.
+- **The MyoWare's upper filter order is an assumption** (first order, from
+  its published 20-498 Hz band); the aliasing numbers depend on it.
+- **One person for drift.** MultiDay is the best public record of day-to-day
+  change I found, but it is one person.
+- **Fault tests use injected faults.** Lead-off, hum, motion and clipping are
+  simulated on clean recordings, not recorded from real failures.
+- **The demo's simulator is not EMG.** It is band-limited noise with made-up
+  activation patterns, used only for plumbing tests.
+
+## Docs
+
+| | |
+|---|---|
+| [RESULTS.md](docs/RESULTS.md) | Every experiment: setup, numbers, what it means |
+| [DATASETS.md](docs/DATASETS.md) | The two datasets, citations, and how the splits avoid leakage |
+| [ALIASING.md](docs/ALIASING.md) | Does 1 kHz alias? Measured, modelled, and the firmware fix |
+| [SIGNAL_QUALITY.md](docs/SIGNAL_QUALITY.md) | The quality monitor, its thresholds and what it buys |
+| [HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) | Every module, the signal chain and the design decisions |
+| [PROTOCOL.md](docs/PROTOCOL.md) | Packet format and the gesture JSON for game engines |
+| [HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) | What to measure first on real hardware |
 
 ## Project layout
 
 ```text
-firmware/esp32_emg_streamer/   ESP32 sketch + config.example.h
+firmware/esp32_emg_streamer/   sketch, mb_protocol.h, mb_decimator.h, config.example.h
+firmware/tests/mb_host.cpp     host build of the headers, used by the tests
 src/myobridge/
-  protocol.py    packet encode/decode, CRC-16, sequence/loss tracking
-  receiver.py    UDP socket -> validated packets + stats
-  simulator.py   fake armband: gesture-dependent EMG + hum, drift, noise
-  dsp.py         streaming bandpass, notch, rectify, RMS envelope
-  features.py    MAV, RMS, waveform length, zero crossings, slope sign changes
-  classifier.py  numpy LDA, calibration, majority vote
-  pipeline.py    raw blocks -> smoothed gesture predictions
-  cli.py         simulate | listen | calibrate | forward | demo
-tests/           pytest suite (no hardware, localhost UDP only)
-scripts/make_demo_plot.py
-docs/            PROTOCOL.md, HOW_IT_WORKS.md, demo.png
+  protocol.py receiver.py      packets, CRC-16, loss tracking, UDP
+  dsp.py features.py           streaming filters, time-domain features
+  classifier.py pipeline.py    numpy LDA with adapt(), live pipeline
+  quality.py                   per-channel signal-quality checks
+  decimator.py aliasing.py     2x decimation reference, noise-folding model
+  datasets/ evaluation.py      pinned dataset loaders, leak-free splits, stats
+  bench/                       the experiments behind every number and figure
+  simulator.py cli.py          fake armband; command-line tools
+results/                       benchmark output (JSON, with provenance)
+docs/                          the documents above and docs/figures/
+tests/
 ```
 
 ## Roadmap
 
-- [ ] IMU fusion (wrist orientation from an MPU-6050/BNO085 alongside EMG)
-- [ ] Unity package: UDP listener + gesture events + calibration UI on Quest
-- [ ] On-device feature extraction (send 20 floats every 50 ms instead of raw samples)
-- [ ] Own analog front end PCB (instrumentation amp + 24-bit ADC such as ADS1299)
-- [ ] Record real sessions to disk and benchmark against public EMG datasets
+- [ ] Bring-up on my own forearm band, then repeat the drift experiment on it
+- [ ] Unity package: UDP listener, gesture events, calibration UI on Quest
+- [ ] IMU fusion (wrist orientation alongside EMG)
+- [ ] Run the classifier on the ESP32 and send only gestures
+- [ ] Own analog front end with a steeper anti-aliasing filter and a 24-bit ADC
 
 ## Safety
 
 This is a hobby project, not a medical device. Power the ESP32 and sensors
-**only from a battery** (LiPo or USB power bank) whenever electrodes are on
-skin. Never wear electrodes while the circuit is connected to mains-powered
-equipment, including a laptop that is charging over the same USB cable used to
-flash the board. Flash, unplug, then attach electrodes; the data goes over WiFi.
-Don't place electrodes across the chest.
+**only from a battery** whenever electrodes are on skin. Never wear
+electrodes while the circuit is connected to mains-powered equipment,
+including a charging laptop on the same USB cable used to flash the board.
+Flash, unplug, then attach electrodes. Don't place electrodes across the
+chest.
 
-## License
+## Credits and license
+
+The datasets belong to their authors: 3DC by Côté-Allard et al. and
+MultiDay by Kaufmann, Englehart and Platzner, both mirrored by the LibEMG
+project. Citations are in [DATASETS.md](docs/DATASETS.md). myobridge
+downloads them; it doesn't redistribute them.
 
 MIT, see [LICENSE](LICENSE).
