@@ -73,3 +73,58 @@ def test_forward_sends_gesture_json(tmp_path, monkeypatch):
     assert msg["type"] == "gesture"
     assert msg["gesture"] in {"rest", "fist", "open", "flex", "extend"}
     assert 0.0 <= msg["confidence"] <= 1.0
+
+
+def test_listen_shows_channel_health(monkeypatch, capsys):
+    import myobridge.cli as cli
+
+    real_receiver = cli.Receiver
+
+    class StoppingReceiver(real_receiver):
+        def __iter__(self):
+            for i, item in enumerate(super().__iter__()):
+                if i > 100:  # ~2 s of 20 ms packets, well before the simulator stops
+                    raise KeyboardInterrupt
+                yield item
+
+    monkeypatch.setattr(cli, "Receiver", StoppingReceiver)
+    port = free_udp_port()
+    rx = threading.Thread(
+        target=main, args=(["listen", "--port", str(port), "--rest-seconds", "0.5"],)
+    )
+    rx.start()
+    run_udp("127.0.0.1", port, EmgSimulator(seed=2), duration_s=2.5, verbose=False)
+    rx.join(timeout=10)
+    out = capsys.readouterr().out
+    assert "ch0 |" in out
+    assert "ok" in out or "CHECK:" in out  # a health report was drawn
+
+
+def test_channel_status_text():
+    from myobridge.cli import channel_status
+    from myobridge.quality import ChannelReport, Issue, QualityReport
+
+    healthy = ChannelReport(0, 10.0, 0.0, 0.01, 0.1, ())
+    bad = ChannelReport(1, 0.1, 0.0, 0.01, 0.1, (Issue.FLATLINE,))
+    report = QualityReport(channels=(healthy, bad))
+    assert channel_status(None, 0) == ""
+    assert channel_status(report, 0) == "ok"
+    assert channel_status(report, 1) == "CHECK: flatline"
+
+
+def test_record_saves_samples_and_reports_noise(tmp_path, capsys):
+    import numpy as np
+
+    port = free_udp_port()
+    out = tmp_path / "rest.npz"
+    rx = threading.Thread(
+        target=main, args=(["record", "--port", str(port), "--seconds", "1", "--out", str(out)],)
+    )
+    rx.start()
+    run_udp("127.0.0.1", port, EmgSimulator(seed=3), duration_s=2.0, verbose=False)
+    rx.join(timeout=10)
+    saved = np.load(out)
+    assert saved["samples"].shape == (1000, 4) and saved["samples"].dtype == np.int16
+    assert int(saved["fs"]) == 1000
+    text = capsys.readouterr().out
+    assert text.count("20-450 Hz RMS") == 4

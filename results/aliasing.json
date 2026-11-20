@@ -1,0 +1,347 @@
+{
+  "quick": false,
+  "provenance": {
+    "schema": 1,
+    "myobridge": "0.1.0",
+    "python": "3.13.18",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "settings": {
+      "features": {
+        "window_s": 0.2,
+        "step_s": 0.05,
+        "settle_s": 0.25,
+        "band": [
+          20.0,
+          450.0
+        ],
+        "threshold_k": 0.5
+      },
+      "chains": [
+        "ideal",
+        "rc",
+        "rc_ideal",
+        "none"
+      ],
+      "myoware_cutoff_hz": 498.0,
+      "days": [
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121
+      ]
+    },
+    "dataset": {
+      "name": "multiday",
+      "url": "https://github.com/LibEMG/MultiDay",
+      "commit": "2b11c859ca2dc3c7b52188c54bc0f5edeb12245a",
+      "citation": "P. Kaufmann, K. Englehart and M. Platzner, 'Fluctuating EMG signals: Investigating long-term effects of pattern matching algorithms', IEEE EMBC 2010, pp. 6357-6360.",
+      "fs": 2048.0,
+      "n_channels": 4,
+      "n_recordings": 1111
+    }
+  },
+  "spectrum": {
+    "active": {
+      "median_fraction_above_512hz_per_channel": [
+        0.00098,
+        0.000602,
+        0.000833,
+        0.000373
+      ],
+      "p95_fraction_above_512hz_per_channel": [
+        0.001827,
+        0.001143,
+        0.002951,
+        0.001889
+      ],
+      "n_recordings": 1010
+    },
+    "rest": {
+      "median_fraction_above_512hz_per_channel": [
+        0.001656,
+        0.001055,
+        0.001122,
+        0.001496
+      ],
+      "p95_fraction_above_512hz_per_channel": [
+        0.002032,
+        0.00139,
+        0.001527,
+        0.001955
+      ],
+      "n_recordings": 101
+    }
+  },
+  "emulated_1024hz": {
+    "ideal": {
+      "same_day_accuracy": {
+        "mean": 0.868473,
+        "std": 0.032806,
+        "min": 0.772941,
+        "max": 0.92876,
+        "ci95_low": 0.861612,
+        "ci95_high": 0.875002,
+        "n": 91
+      },
+      "next_day_accuracy": {
+        "mean": 0.836951,
+        "std": 0.051622,
+        "min": 0.657627,
+        "max": 0.925972,
+        "ci95_low": 0.826192,
+        "ci95_high": 0.84713,
+        "n": 90
+      }
+    },
+    "rc": {
+      "same_day_accuracy": {
+        "mean": 0.865447,
+        "std": 0.034809,
+        "min": 0.752941,
+        "max": 0.930079,
+        "ci95_low": 0.858072,
+        "ci95_high": 0.872589,
+        "n": 91
+      },
+      "next_day_accuracy": {
+        "mean": 0.835729,
+        "std": 0.051417,
+        "min": 0.659887,
+        "max": 0.920954,
+        "ci95_low": 0.824876,
+        "ci95_high": 0.845862,
+        "n": 90
+      },
+      "in_band_error_energy_median_per_channel": [
+        0.015595,
+        0.011506,
+        0.012321,
+        0.007962
+      ]
+    },
+    "rc_ideal": {
+      "same_day_accuracy": {
+        "mean": 0.865366,
+        "std": 0.033857,
+        "min": 0.752941,
+        "max": 0.930079,
+        "ci95_low": 0.857992,
+        "ci95_high": 0.872281,
+        "n": 91
+      },
+      "next_day_accuracy": {
+        "mean": 0.835276,
+        "std": 0.052142,
+        "min": 0.658757,
+        "max": 0.919554,
+        "ci95_low": 0.82442,
+        "ci95_high": 0.845453,
+        "n": 90
+      },
+      "in_band_error_energy_median_per_channel": [
+        0.015491,
+        0.011433,
+        0.012235,
+        0.007914
+      ]
+    },
+    "none": {
+      "same_day_accuracy": {
+        "mean": 0.868327,
+        "std": 0.033356,
+        "min": 0.761176,
+        "max": 0.92876,
+        "ci95_low": 0.861393,
+        "ci95_high": 0.874923,
+        "n": 91
+      },
+      "next_day_accuracy": {
+        "mean": 0.836934,
+        "std": 0.052306,
+        "min": 0.663277,
+        "max": 0.923463,
+        "ci95_low": 0.82609,
+        "ci95_high": 0.847088,
+        "n": 90
+      },
+      "in_band_error_energy_median_per_channel": [
+        9.9e-05,
+        6.5e-05,
+        9.6e-05,
+        5.3e-05
+      ]
+    }
+  },
+  "white_noise_model": {
+    "cutoff_hz": 498.0,
+    "band_hz": [
+      20.0,
+      450.0
+    ],
+    "cases": {
+      "order1_fs1000": {
+        "order": 1,
+        "fs": 1000.0,
+        "folded_over_in_band": 0.954955,
+        "noise_floor_increase_db": 2.911368
+      },
+      "order1_fs2000": {
+        "order": 1,
+        "fs": 2000.0,
+        "folded_over_in_band": 0.251334,
+        "noise_floor_increase_db": 0.973732
+      },
+      "order1_fs4000": {
+        "order": 1,
+        "fs": 4000.0,
+        "folded_over_in_band": 0.063271,
+        "noise_floor_increase_db": 0.266441
+      },
+      "order2_fs1000": {
+        "order": 2,
+        "fs": 1000.0,
+        "folded_over_in_band": 0.244015,
+        "noise_floor_increase_db": 0.948256
+      },
+      "order2_fs2000": {
+        "order": 2,
+        "fs": 2000.0,
+        "folded_over_in_band": 0.010942,
+        "noise_floor_increase_db": 0.047262
+      },
+      "order2_fs4000": {
+        "order": 2,
+        "fs": 4000.0,
+        "folded_over_in_band": 0.000605,
+        "noise_floor_increase_db": 0.002626
+      },
+      "order4_fs1000": {
+        "order": 4,
+        "fs": 1000.0,
+        "folded_over_in_band": 0.071648,
+        "noise_floor_increase_db": 0.300521
+      },
+      "order4_fs2000": {
+        "order": 4,
+        "fs": 2000.0,
+        "folded_over_in_band": 5.7e-05,
+        "noise_floor_increase_db": 0.000249
+      },
+      "order4_fs4000": {
+        "order": 4,
+        "fs": 4000.0,
+        "folded_over_in_band": 0.0,
+        "noise_floor_increase_db": 1e-06
+      },
+      "order1_fs2000_halfband": {
+        "order": 1,
+        "fs": 2000.0,
+        "decimator": "firmware halfband, 47 taps",
+        "folded_over_in_band": 0.251088,
+        "noise_floor_increase_db": 0.972877
+      },
+      "order2_fs2000_halfband": {
+        "order": 2,
+        "fs": 2000.0,
+        "decimator": "firmware halfband, 47 taps",
+        "folded_over_in_band": 0.010948,
+        "noise_floor_increase_db": 0.04729
+      },
+      "order4_fs2000_halfband": {
+        "order": 4,
+        "fs": 2000.0,
+        "decimator": "firmware halfband, 47 taps",
+        "folded_over_in_band": 7.6e-05,
+        "noise_floor_increase_db": 0.000332
+      }
+    }
+  }
+}

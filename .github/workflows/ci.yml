@@ -23,13 +23,24 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
-      - name: Test
-        run: pytest -q
-      - name: Demo smoke test
+      - name: Type check (strict)
+        # mypy checks against 3.12 rules whatever runs it (numpy's stubs need it).
+        run: mypy
+      - name: Test (includes firmware host tests, built with g++)
+        env:
+          MYOBRIDGE_REQUIRE_CXX: "1"
+        run: pytest -q --cov=myobridge --cov-report=term --cov-report=xml
+      - name: Demo smoke test (simulator)
         run: myobridge demo --train-seconds 4 --repeats 1
+      - name: Latency benchmark (no data needed)
+        run: myobridge bench latency --quick --no-figures --out /tmp/results
 
   firmware:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        oversample: [1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
@@ -37,7 +48,9 @@ jobs:
         run: |
           arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-      - name: Compile sketch
+      - name: Compile sketch (OVERSAMPLE=${{ matrix.oversample }})
         run: |
-          cp firmware/esp32_emg_streamer/config.example.h firmware/esp32_emg_streamer/config.h
-          arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_emg_streamer
+          cd firmware/esp32_emg_streamer
+          sed "s/^#define OVERSAMPLE 1$/#define OVERSAMPLE ${{ matrix.oversample }}/" config.example.h > config.h
+          grep "^#define OVERSAMPLE" config.h
+          arduino-cli compile --fqbn esp32:esp32:esp32 --warnings all .

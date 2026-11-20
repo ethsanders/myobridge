@@ -1,0 +1,393 @@
+{
+  "quick": false,
+  "provenance": {
+    "schema": 1,
+    "myobridge": "0.1.0",
+    "python": "3.13.18",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "settings": {
+      "quality": {
+        "fs": 1000.0,
+        "mains_hz": 60.0,
+        "window_s": 1.0,
+        "flatline_ratio": 0.636075,
+        "clip_low": -32700.0,
+        "clip_high": 32700.0,
+        "clip_fraction": 0.01,
+        "line_noise_share": 0.593423,
+        "motion_share": 0.228049,
+        "n_harmonics": 3
+      },
+      "validation_subjects": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "report_subjects": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22
+      ],
+      "fault_onset_s": 1.5,
+      "hop_s": 0.25
+    },
+    "dataset": {
+      "name": "3dc",
+      "url": "https://github.com/libemg/3DCDataset",
+      "commit": "1af9058237a5d79a883feb2ce61f4d59090288ac",
+      "citation": "C\u00f4t\u00e9-Allard et al., 'Interpreting deep learning features for myoelectric control: a comparison with handcrafted features', Frontiers in Bioengineering and Biotechnology 8:158 (2020); data first collected for C\u00f4t\u00e9-Allard et al., IEEE TNSRE 27(4):760-771 (2019).",
+      "fs": 1000.0,
+      "n_channels": 10,
+      "n_recordings": 1936
+    }
+  },
+  "thresholds": {
+    "rule": "each threshold = the 99th (flatline: 1th) percentile of that statistic on clean reports from validation persons",
+    "n_reports": 8921,
+    "chosen": {
+      "line_noise_share": 0.593423,
+      "motion_share": 0.228049,
+      "flatline_ratio": 0.636075
+    }
+  },
+  "false_alarms_clean": {
+    "reports": 118800,
+    "any_check": 0.013308,
+    "per_check": {
+      "flatline": 0.008729,
+      "clipping": 0.0,
+      "line_noise": 0.000673,
+      "motion": 0.004192
+    },
+    "most_flagged_channels": [
+      {
+        "channel": "subject19_ch7",
+        "reports_flagged": 65
+      },
+      {
+        "channel": "subject21_ch7",
+        "reports_flagged": 65
+      },
+      {
+        "channel": "subject19_ch9",
+        "reports_flagged": 63
+      },
+      {
+        "channel": "subject21_ch9",
+        "reports_flagged": 63
+      },
+      {
+        "channel": "subject14_ch7",
+        "reports_flagged": 58
+      }
+    ]
+  },
+  "detection": {
+    "lead_off": {
+      "x0.1": {
+        "detected": 0.829545,
+        "n": 704,
+        "median_delay_s": 1.0
+      },
+      "x0.03": {
+        "detected": 0.987216,
+        "n": 704,
+        "median_delay_s": 1.0
+      },
+      "x0.01": {
+        "detected": 1.0,
+        "n": 704,
+        "median_delay_s": 1.0
+      }
+    },
+    "line_noise": {
+      "0.25x": {
+        "detected": 0.130682,
+        "n": 704,
+        "median_delay_s": 2.25
+      },
+      "1x": {
+        "detected": 0.846591,
+        "n": 704,
+        "median_delay_s": 1.0
+      },
+      "4x": {
+        "detected": 1.0,
+        "n": 704,
+        "median_delay_s": 0.5
+      }
+    },
+    "motion": {
+      "1x": {
+        "detected": 0.987216,
+        "n": 704,
+        "median_delay_s": 0.75
+      },
+      "3x": {
+        "detected": 1.0,
+        "n": 704,
+        "median_delay_s": 0.25
+      },
+      "10x": {
+        "detected": 1.0,
+        "n": 704,
+        "median_delay_s": 0.25
+      }
+    },
+    "clipping": {
+      "peak1x": {
+        "detected": 0.994318,
+        "n": 704,
+        "median_delay_s": 0.75
+      },
+      "peak2x": {
+        "detected": 1.0,
+        "n": 704,
+        "median_delay_s": 0.25
+      },
+      "peak4x": {
+        "detected": 1.0,
+        "n": 704,
+        "median_delay_s": 0.25
+      }
+    }
+  },
+  "fault_tolerance": {
+    "scenarios": {
+      "lead_off": "signal scaled by 0.01",
+      "clipping": "gain raised until the 99th-percentile peak is 2x the ADC rail",
+      "line_noise": "mains hum with 4x the EMG power",
+      "motion": "slow baseline wander with 3x the EMG RMS"
+    },
+    "drop_channel_on": [
+      "clipping",
+      "flatline"
+    ],
+    "averaged_over": "16 persons x 10 failed channels",
+    "windows_also_dropping_a_healthy_channel": {
+      "lead_off": {
+        "monitor": 0.044864,
+        "monitor_drop_on_any_flag": 0.07235
+      },
+      "clipping": {
+        "monitor": 0.044864,
+        "monitor_drop_on_any_flag": 0.072348
+      },
+      "line_noise": {
+        "monitor": 0.044864,
+        "monitor_drop_on_any_flag": 0.072412
+      },
+      "motion": {
+        "monitor": 0.044864,
+        "monitor_drop_on_any_flag": 0.072356
+      }
+    },
+    "results": {
+      "lead_off": {
+        "clean": {
+          "mean": 0.904903,
+          "std": 0.052543,
+          "min": 0.777971,
+          "max": 0.978591,
+          "ci95_low": 0.896719,
+          "ci95_high": 0.912904,
+          "n": 160
+        },
+        "no_monitor": {
+          "mean": 0.329468,
+          "std": 0.126178,
+          "min": 0.090909,
+          "max": 0.746617,
+          "ci95_low": 0.309812,
+          "ci95_high": 0.349314,
+          "n": 160
+        },
+        "monitor": {
+          "mean": 0.892616,
+          "std": 0.055499,
+          "min": 0.743736,
+          "max": 0.980074,
+          "ci95_low": 0.883964,
+          "ci95_high": 0.901049,
+          "n": 160
+        },
+        "monitor_drop_on_any_flag": {
+          "mean": 0.890133,
+          "std": 0.055542,
+          "min": 0.742744,
+          "max": 0.980074,
+          "ci95_low": 0.881313,
+          "ci95_high": 0.898654,
+          "n": 160
+        },
+        "oracle_drop": {
+          "mean": 0.896054,
+          "std": 0.055134,
+          "min": 0.747457,
+          "max": 0.980074,
+          "ci95_low": 0.887325,
+          "ci95_high": 0.904484,
+          "n": 160
+        }
+      },
+      "clipping": {
+        "clean": {
+          "mean": 0.904903,
+          "std": 0.052543,
+          "min": 0.777971,
+          "max": 0.978591,
+          "ci95_low": 0.896719,
+          "ci95_high": 0.912904,
+          "n": 160
+        },
+        "no_monitor": {
+          "mean": 0.21851,
+          "std": 0.114727,
+          "min": 0.087574,
+          "max": 0.547423,
+          "ci95_low": 0.201535,
+          "ci95_high": 0.235809,
+          "n": 160
+        },
+        "monitor": {
+          "mean": 0.869043,
+          "std": 0.057061,
+          "min": 0.718184,
+          "max": 0.974908,
+          "ci95_low": 0.859619,
+          "ci95_high": 0.877793,
+          "n": 160
+        },
+        "monitor_drop_on_any_flag": {
+          "mean": 0.866618,
+          "std": 0.058442,
+          "min": 0.720913,
+          "max": 0.974908,
+          "ci95_low": 0.857173,
+          "ci95_high": 0.875832,
+          "n": 160
+        },
+        "oracle_drop": {
+          "mean": 0.896054,
+          "std": 0.055134,
+          "min": 0.747457,
+          "max": 0.980074,
+          "ci95_low": 0.887325,
+          "ci95_high": 0.904484,
+          "n": 160
+        }
+      },
+      "line_noise": {
+        "clean": {
+          "mean": 0.904903,
+          "std": 0.052543,
+          "min": 0.777971,
+          "max": 0.978591,
+          "ci95_low": 0.896719,
+          "ci95_high": 0.912904,
+          "n": 160
+        },
+        "no_monitor": {
+          "mean": 0.904943,
+          "std": 0.052653,
+          "min": 0.776978,
+          "max": 0.978591,
+          "ci95_low": 0.896718,
+          "ci95_high": 0.913004,
+          "n": 160
+        },
+        "monitor": {
+          "mean": 0.902557,
+          "std": 0.052772,
+          "min": 0.774001,
+          "max": 0.978591,
+          "ci95_low": 0.894126,
+          "ci95_high": 0.910506,
+          "n": 160
+        },
+        "monitor_drop_on_any_flag": {
+          "mean": 0.892112,
+          "std": 0.055782,
+          "min": 0.742992,
+          "max": 0.980074,
+          "ci95_low": 0.883402,
+          "ci95_high": 0.900569,
+          "n": 160
+        },
+        "oracle_drop": {
+          "mean": 0.896054,
+          "std": 0.055134,
+          "min": 0.747457,
+          "max": 0.980074,
+          "ci95_low": 0.887325,
+          "ci95_high": 0.904484,
+          "n": 160
+        }
+      },
+      "motion": {
+        "clean": {
+          "mean": 0.904903,
+          "std": 0.052543,
+          "min": 0.777971,
+          "max": 0.978591,
+          "ci95_low": 0.896719,
+          "ci95_high": 0.912904,
+          "n": 160
+        },
+        "no_monitor": {
+          "mean": 0.904765,
+          "std": 0.052627,
+          "min": 0.776482,
+          "max": 0.979338,
+          "ci95_low": 0.89655,
+          "ci95_high": 0.912751,
+          "n": 160
+        },
+        "monitor": {
+          "mean": 0.902004,
+          "std": 0.05311,
+          "min": 0.772017,
+          "max": 0.979089,
+          "ci95_low": 0.893572,
+          "ci95_high": 0.909907,
+          "n": 160
+        },
+        "monitor_drop_on_any_flag": {
+          "mean": 0.8919,
+          "std": 0.055761,
+          "min": 0.742744,
+          "max": 0.980074,
+          "ci95_low": 0.883096,
+          "ci95_high": 0.900318,
+          "n": 160
+        },
+        "oracle_drop": {
+          "mean": 0.896054,
+          "std": 0.055134,
+          "min": 0.747457,
+          "max": 0.980074,
+          "ci95_low": 0.887325,
+          "ci95_high": 0.904484,
+          "n": 160
+        }
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-"""Command line entry point: `myobridge <simulate|listen|calibrate|forward|demo>`."""
+"""Command line entry point: `myobridge <simulate|listen|calibrate|forward|demo|fetch|bench>`."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from .classifier import LDAClassifier, calibrate
 from .dsp import EmgFilter
 from .pipeline import GesturePipeline
 from .protocol import SequenceTracker, decode_packet
+from .quality import QualityReport
 from .receiver import Receiver
 from .simulator import GESTURES, EmgSimulator, gesture_session, packetize, run_udp
 
@@ -24,7 +25,7 @@ DEFAULT_FORWARD_PORT = 5006  # PC -> game engine
 # ------------------------------------------------------------------- simulate
 
 
-def cmd_simulate(args) -> None:
+def cmd_simulate(args: argparse.Namespace) -> None:
     sim = EmgSimulator(n_channels=args.channels, fs=args.rate, seed=args.seed, mains_hz=args.mains)
     print(f"Simulating {args.channels} ch @ {args.rate} Hz -> udp://{args.host}:{args.port}")
     run_udp(args.host, args.port, sim, args.hold, drop_prob=args.drop, duration_s=args.duration)
@@ -38,9 +39,24 @@ def bar(value: float, full_scale: float, width: int = 40) -> str:
     return "#" * filled + "." * (width - filled)
 
 
-def cmd_listen(args) -> None:
+def channel_status(report: QualityReport | None, channel: int) -> str:
+    """One-word health note for the live display ("" until the first report)."""
+    if report is None:
+        return ""
+    issues = report.channels[channel].issues
+    return "ok" if not issues else "CHECK: " + ", ".join(x.value for x in issues)
+
+
+def cmd_listen(args: argparse.Namespace) -> None:
+    from .quality import QualityConfig, QualityMonitor, rest_floor
+
     print(f"Listening on udp://0.0.0.0:{args.port} (Ctrl-C to stop)")
-    emg_filter, last_draw, lines_drawn = None, 0.0, 0
+    print(
+        f"Relax your arm for the first {args.rest_seconds:g} s (sets each channel's noise floor)."
+    )
+    emg_filter, monitor, last_draw, lines_drawn = None, None, 0.0, 0
+    rest: list[np.ndarray] = []
+    report: QualityReport | None = None
     with Receiver(port=args.port) as rx:
         for packet in rx:
             if packet is not None:
@@ -48,12 +64,29 @@ def cmd_listen(args) -> None:
                     emg_filter = EmgFilter(
                         packet.sample_rate, packet.n_channels, mains_hz=args.mains
                     )
+                    qcfg = QualityConfig(
+                        fs=packet.sample_rate,
+                        mains_hz=args.mains,
+                        clip_low=-args.rail,
+                        clip_high=args.rail,
+                    )
+                    monitor = QualityMonitor(qcfg, packet.n_channels)
                 envelope = emg_filter.process(packet.samples).envelope[-1]
+                assert monitor is not None
+                raw = packet.samples.astype(np.float64)
+                if monitor.rest_floor is None:
+                    rest.append(raw)
+                    if sum(len(r) for r in rest) >= args.rest_seconds * packet.sample_rate:
+                        monitor.rest_floor = rest_floor(np.vstack(rest), monitor.cfg)
+                report = monitor.push(raw) or report
             if emg_filter is None or time.monotonic() - last_draw < 0.1:
                 continue
             last_draw = time.monotonic()
             s = rx.stats
-            rows = [f"ch{i} |{bar(v, args.scale)}| {v:7.1f}" for i, v in enumerate(envelope)]
+            rows = []
+            for i, v in enumerate(envelope):
+                status = channel_status(report, i)
+                rows.append(f"ch{i} |{bar(v, args.scale)}| {v:7.1f}  {status}")
             rows.append(
                 f"rx {s.received}  dropped {s.dropped} ({s.loss_percent:.2f}%)  "
                 f"corrupt {s.corrupt}  reordered {s.reordered}  restarts {s.restarts}"
@@ -66,10 +99,52 @@ def cmd_listen(args) -> None:
             lines_drawn = len(rows)
 
 
+# --------------------------------------------------------------------- record
+
+
+def noise_summary(raw: np.ndarray, fs: float, mains_hz: float) -> list[str]:
+    """Per-channel 20-450 Hz RMS and health of a recording, one line each."""
+    from .quality import QualityConfig, assess
+
+    clean = EmgFilter(fs, raw.shape[1], mains_hz=mains_hz).process(raw.astype(np.float64)).clean
+    settle = clean[int(0.25 * fs) :]  # skip the filters' start-up transient
+    rms = np.sqrt(np.mean(settle**2, axis=0))
+    report = assess(raw.astype(np.float64), QualityConfig(fs=fs, mains_hz=mains_hz))
+    return [
+        f"ch{i}  20-450 Hz RMS {rms[i]:8.2f} counts   mains share "
+        f"{c.line_noise_share:5.1%}   {channel_status(report, i)}"
+        for i, c in enumerate(report.channels)
+    ]
+
+
+def cmd_record(args: argparse.Namespace) -> None:
+    """Save raw samples to .npz (for bring-up measurements and offline analysis)."""
+    blocks: list[np.ndarray] = []
+    fs, total = None, 0
+    print(f"Recording {args.seconds:g} s from udp://0.0.0.0:{args.port} ...", flush=True)
+    with Receiver(port=args.port) as rx:
+        for packet in rx:
+            if packet is None:
+                continue
+            fs = packet.sample_rate
+            blocks.append(packet.samples)
+            total += packet.n_frames
+            if total >= args.seconds * fs:
+                break
+        stats = rx.stats
+    assert fs is not None
+    raw = np.vstack(blocks)[: int(args.seconds * fs)]
+    np.savez(args.out, samples=raw, fs=fs, dropped_packets=stats.dropped)
+    print(f"Saved {len(raw)} samples x {raw.shape[1]} channels at {fs} Hz to {args.out}")
+    print(f"packets dropped {stats.dropped} ({stats.loss_percent:.2f}%)")
+    for line in noise_summary(raw, fs, args.mains):
+        print("  " + line)
+
+
 # ------------------------------------------------------------------ calibrate
 
 
-def cmd_calibrate(args) -> None:
+def cmd_calibrate(args: argparse.Namespace) -> None:
     gestures = args.gestures.split(",")
     if args.sim:
         sim = EmgSimulator(seed=args.seed, mains_hz=args.mains)
@@ -95,7 +170,7 @@ def cmd_calibrate(args) -> None:
 # -------------------------------------------------------------------- forward
 
 
-def cmd_forward(args) -> None:
+def cmd_forward(args: argparse.Namespace) -> None:
     """Live: UDP EMG in -> gesture JSON out (e.g. to a Unity app on a Quest)."""
     model = LDAClassifier.load(args.model)
     host, port = args.to.rsplit(":", 1)
@@ -149,7 +224,7 @@ def link_check(seed: int, n_packets: int = 2000, drop_prob: float = 0.01) -> str
     )
 
 
-def cmd_demo(args) -> None:
+def cmd_demo(args: argparse.Namespace) -> None:
     fs, block = 1000, 20  # 20 samples per packet = one packet every 20 ms
     print("myobridge demo: simulated 4-channel EMG, nothing leaves this process\n")
 
@@ -195,6 +270,7 @@ def cmd_demo(args) -> None:
         "  (excludes ~300 ms after each switch)"
     )
     print("\n      confusion matrix (rows = true, cols = predicted, every window)")
+    assert clf.classes_ is not None
     names = list(clf.classes_)
     print("      " + " " * 8 + "".join(f"{n:>8}" for n in names))
     for t in names:
@@ -208,6 +284,35 @@ def cmd_demo(args) -> None:
         f"p99 {np.percentile(lat, 99):.0f} us, max {lat.max():.0f} us "
         f"(budget: {1e6 * block / fs:.0f} us per block)"
     )
+
+
+# ------------------------------------------------------------- fetch / bench
+
+
+def cmd_fetch(args: argparse.Namespace) -> None:
+    from . import datasets
+
+    for name in args.names or sorted(datasets.REGISTRY):
+        module = datasets.REGISTRY[name]
+        path = datasets.fetch(name, module.SOURCE, args.data)
+        print(f"{name}: {path} @ {module.SOURCE.commit[:12]}")
+        print(f"  please cite: {module.SOURCE.citation}")
+
+
+def cmd_bench(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from . import bench
+
+    names = args.names or list(bench.EXPERIMENTS)
+    opts = bench.RunOptions(
+        data_root=Path(args.data) if args.data else None,
+        out_dir=Path(args.out),
+        figures_dir=None if args.no_figures else Path(args.figures),
+        quick=args.quick,
+        download=not args.no_download,
+    )
+    bench.run(names, opts)
 
 
 # ----------------------------------------------------------------------- main
@@ -232,7 +337,15 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("listen", help="show live per-channel RMS and link stats")
     s.add_argument("--port", type=int, default=DEFAULT_PORT)
     s.add_argument("--scale", type=float, default=600.0, help="RMS value for a full bar")
+    s.add_argument("--rest-seconds", type=float, default=3.0, help="rest period for the floor")
+    s.add_argument("--rail", type=float, default=2040.0, help="|sample| counted as clipped")
     s.set_defaults(func=cmd_listen)
+
+    s = sub.add_parser("record", help="save raw samples to .npz and print each channel's noise")
+    s.add_argument("--port", type=int, default=DEFAULT_PORT)
+    s.add_argument("--seconds", type=float, default=10.0)
+    s.add_argument("--out", default="recording.npz")
+    s.set_defaults(func=cmd_record)
 
     s = sub.add_parser("calibrate", help="record each gesture and train an LDA model")
     s.add_argument("--port", type=int, default=DEFAULT_PORT)
@@ -256,6 +369,21 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--train-seconds", type=float, default=8.0)
     s.add_argument("--repeats", type=int, default=3)
     s.set_defaults(func=cmd_demo)
+
+    s = sub.add_parser("fetch", help="download the public EMG datasets (pinned versions)")
+    s.add_argument("names", nargs="*", help="3dc, multiday (default: both)")
+    s.add_argument("--data", default=None, help="folder for datasets (default $MYOBRIDGE_DATA)")
+    s.set_defaults(func=cmd_fetch)
+
+    s = sub.add_parser("bench", help="run the benchmarks on real EMG and write results/")
+    s.add_argument("names", nargs="*", help="multiday threedc aliasing quality latency")
+    s.add_argument("--data", default=None, help="folder for datasets (default $MYOBRIDGE_DATA)")
+    s.add_argument("--out", default="results", help="where to write the JSON results")
+    s.add_argument("--figures", default="docs/figures", help="where to draw the figures")
+    s.add_argument("--no-figures", action="store_true")
+    s.add_argument("--quick", action="store_true", help="tiny subset: a smoke test, not results")
+    s.add_argument("--no-download", action="store_true", help="use the data folder as it is")
+    s.set_defaults(func=cmd_bench)
     return p
 
 
