@@ -48,7 +48,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "NPY"]
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.12"  # numpy 2.x stubs need it; runtime support is still 3.10+
+python_version = "3.12"  # numpy 2.3+ stubs; runtime support is still 3.10+
 strict = true
 files = ["src/myobridge"]
 warn_unreachable = true

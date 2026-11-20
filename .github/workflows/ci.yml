@@ -24,7 +24,10 @@ jobs:
           ruff check .
           ruff format --check .
       - name: Type check (strict)
-        # mypy checks against 3.12 rules whatever runs it (numpy's stubs need it).
+        # The numpy that installs on 3.10 and 3.11 is older and ships different
+        # type stubs, so strict typing is checked on 3.12+ only. Tests still run
+        # on every version.
+        if: matrix.python-version == '3.12' || matrix.python-version == '3.13'
         run: mypy
       - name: Test (includes firmware host tests, built with g++)
         env:
