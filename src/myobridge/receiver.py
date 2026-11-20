@@ -33,7 +33,7 @@ class Receiver:
     @property
     def port(self) -> int:
         """Actual bound port (useful when you bind to port 0 = "pick any free one")."""
-        return self.sock.getsockname()[1]
+        return int(self.sock.getsockname()[1])
 
     def handle_datagram(self, data: bytes) -> Packet | None:
         """Validate one datagram. Returns the packet, or None if it must be ignored."""
@@ -74,5 +74,5 @@ class Receiver:
     def __enter__(self) -> Receiver:
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()

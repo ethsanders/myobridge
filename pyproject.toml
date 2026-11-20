@@ -21,7 +21,15 @@ classifiers = [
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.6"]
-dev = ["pytest>=7", "ruff>=0.5"]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "hypothesis>=6",
+    "ruff>=0.5",
+    "mypy>=1.8",
+    "scikit-learn>=1.2",
+    "matplotlib>=3.6",
+]
 
 [project.scripts]
 myobridge = "myobridge.cli:main"
@@ -38,3 +46,23 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "NPY"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"  # numpy 2.x stubs need it; runtime support is still 3.10+
+strict = true
+files = ["src/myobridge"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["scipy.*", "matplotlib.*", "sklearn.*"]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["myobridge"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 90  # CI fails if coverage drops below this
+exclude_also = ["if __name__ == .__main__.:"]

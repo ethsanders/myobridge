@@ -77,11 +77,11 @@ class Packet:
 
     @property
     def n_channels(self) -> int:
-        return self.samples.shape[1]
+        return int(self.samples.shape[1])
 
     @property
     def n_frames(self) -> int:
-        return self.samples.shape[0]
+        return int(self.samples.shape[0])
 
 
 def encode_packet(samples: np.ndarray, seq: int, timestamp_us: int, sample_rate: int) -> bytes:
@@ -113,8 +113,8 @@ def decode_packet(data: bytes) -> Packet:
     (crc_received,) = struct.unpack_from("<H", data, expected_len - CRC_SIZE)
     if crc16_ccitt_false(data[: expected_len - CRC_SIZE]) != crc_received:
         raise ProtocolError("crc", "CRC mismatch")
-    samples = np.frombuffer(data, dtype="<i2", count=n_channels * n_frames, offset=HEADER.size)
-    samples = samples.reshape(n_frames, n_channels).astype(np.int16)
+    flat = np.frombuffer(data, dtype="<i2", count=n_channels * n_frames, offset=HEADER.size)
+    samples = flat.reshape(n_frames, n_channels).astype(np.int16)
     return Packet(seq=seq, timestamp_us=ts, sample_rate=sample_rate, samples=samples)
 
 

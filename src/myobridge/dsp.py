@@ -25,7 +25,8 @@ class StreamingSOS:
     def process(self, x: np.ndarray) -> np.ndarray:
         """Filter a (n_samples, n_channels) block; the state carries over."""
         y, self.zi = signal.sosfilt(self.sos, x, axis=0, zi=self.zi)
-        return y
+        out: np.ndarray = y
+        return out
 
 
 class MovingRMS:
@@ -46,20 +47,25 @@ class MovingRMS:
         csum = np.vstack([np.zeros((1, x.shape[1])), csum])
         mean_sq = (csum[self.window :] - csum[: -self.window]) / self.window
         self.history = squared[-(self.window - 1) :] if self.window > 1 else self.history
-        return np.sqrt(np.maximum(mean_sq, 0.0))  # max() guards tiny negative round-off
+        out: np.ndarray = np.sqrt(np.maximum(mean_sq, 0.0))  # max() guards tiny negative round-off
+        return out
 
 
-def design_bandpass(fs: float, low: float = 20.0, high: float = 450.0, order: int = 4):
+def design_bandpass(
+    fs: float, low: float = 20.0, high: float = 450.0, order: int = 4
+) -> np.ndarray:
     """Butterworth bandpass as second-order sections (numerically stable)."""
     if not 0 < low < high < fs / 2:
         raise ValueError(f"need 0 < low < high < Nyquist ({fs / 2} Hz)")
-    return signal.butter(order, [low, high], btype="bandpass", fs=fs, output="sos")
+    sos: np.ndarray = signal.butter(order, [low, high], btype="bandpass", fs=fs, output="sos")
+    return sos
 
 
-def design_notch(fs: float, freq: float = 60.0, quality: float = 30.0):
+def design_notch(fs: float, freq: float = 60.0, quality: float = 30.0) -> np.ndarray:
     """Narrow IIR notch at the mains frequency. Q=30 -> ~2 Hz wide at 60 Hz."""
     b, a = signal.iirnotch(freq, quality, fs=fs)
-    return signal.tf2sos(b, a)
+    sos: np.ndarray = signal.tf2sos(b, a)
+    return sos
 
 
 @dataclass

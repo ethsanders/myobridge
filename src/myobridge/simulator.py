@@ -101,7 +101,8 @@ class EmgSimulator:
         self.t += n
 
         total = emg + hum + drift + noise
-        return np.clip(np.round(total), -32768, 32767).astype(np.int16)
+        out: np.ndarray = np.clip(np.round(total), -32768, 32767).astype(np.int16)
+        return out
 
     def record(self, gesture: str, seconds: float) -> np.ndarray:
         """Hold one gesture for `seconds` and return the samples (calibration helper)."""
