@@ -2,7 +2,7 @@
 //
 // Kept separate from the sketch so the exact same code can be compiled on a
 // PC and tested against the Python encoder/decoder (firmware/tests/). The
-// format is documented in docs/PROTOCOL.md and implemented in Python in
+// format is documented in docs/protocol.md and implemented in Python in
 // src/myobridge/protocol.py.
 #pragma once
 

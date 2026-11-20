@@ -42,16 +42,17 @@ LDA) on days 31-121:
 
 | How 2048 Hz becomes 1024 Hz | Same-day accuracy | Next-day accuracy |
 |---|---|---|
-| `ideal`: steep anti-alias FIR, then drop every 2nd sample | 86.8% | 83.7% |
-| `none`: just drop every 2nd sample, no filter at all | 86.8% | 83.7% |
-| `rc`: one-pole low-pass at 498 Hz (MyoWare-like), then drop | 86.5% | 83.6% |
-| `rc_ideal`: the same one-pole, then the steep FIR | 86.5% | 83.5% |
+| `ideal`: steep anti-alias FIR, then drop every 2nd sample | 88.1% | 86.6% |
+| `none`: just drop every 2nd sample, no filter at all | 88.1% | 86.5% |
+| `rc`: one-pole low-pass at 498 Hz (MyoWare-like), then drop | 88.1% | 86.4% |
+| `rc_ideal`: the same one-pole, then the steep FIR | 88.0% | 86.4% |
 
 Even with no filter at all, accuracy doesn't move. The signal itself
 confirms it: the difference between `none` and `ideal` inside 20-450 Hz holds
-about 0.01% of the signal's energy (-40 dB). The one-pole filter costs a few
-tenths of a point, and since `rc` and `rc_ideal` match, that is its in-band
-droop and phase lag, not aliasing.
+about 0.01% of the signal's energy (-40 dB). The one-pole filter changes
+about 1% of the in-band energy, and since `rc` and `rc_ideal` match, that is
+its droop and phase lag, not aliasing; accuracy moves by less than 0.2
+points either way.
 
 ## 2. Wideband noise does alias
 
@@ -114,7 +115,7 @@ is.
 - **`OVERSAMPLE 2` hasn't run on hardware.** It compiles in CI and the maths
   is tested bit for bit, but the ESP32 has to read 4 channels every 500 µs.
   The plan for checking it, by recording the rest-noise floor both ways, is
-  in [HARDWARE_BRINGUP.md](HARDWARE_BRINGUP.md).
+  in [hardware-bringup.md](hardware-bringup.md).
 
 ## Reproduce
 

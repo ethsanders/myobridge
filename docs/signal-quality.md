@@ -3,7 +3,7 @@
 A gesture classifier trusts every channel equally. If one electrode lifts
 off, saturates, or picks up mains hum, the classifier doesn't know: it just
 starts giving wrong answers. On 3DC, one lifted electrode takes accuracy from
-90.5% to 32.9%.
+92.2% to 24.4%.
 
 `myobridge.quality` checks each channel every 250 ms, says what's wrong in
 words a person can act on, and lets the decoder fall back to a model trained
@@ -52,7 +52,7 @@ people 1-6 (1st percentile for flatline), so each check should fire on about
 The defaults are the rounded values, and a test checks they stay within
 0.025 of the benchmark's. They were set on the 3DC armband, which has its
 own amplifier and filters; the bring-up checklist
-([HARDWARE_BRINGUP.md](HARDWARE_BRINGUP.md)) includes checking them on
+([hardware-bringup.md](hardware-bringup.md)) includes checking them on
 myobridge's hardware.
 
 ## False alarms on clean data (people 7-22)
@@ -106,17 +106,17 @@ for the whole test session and gestures are decoded three ways:
 
 - **no monitor:** the normal model, bad channel included
 - **monitor:** whenever the monitor flags a channel, use a model trained
-  without it (features are per channel, so this is the same training data
-  minus some columns; models are cached)
+  without it (`LDAClassifier.subset` drops that channel's feature columns
+  and gives exactly the model a refit without them would; models are cached)
 - **oracle:** always use the model without the broken channel (the best the
   monitor could do)
 
 | Fault | No fault | No monitor | **Monitor** | Oracle |
 |---|---|---|---|---|
-| Electrode off (x0.01) | 90.5% | 32.9% | **89.3%** | 89.6% |
-| Clipping (peak at 2x the rail) | 90.5% | 21.9% | **86.9%** | 89.6% |
-| Mains hum (4x the EMG power) | 90.5% | 90.5% | **90.3%** | 89.6% |
-| Motion (3x the EMG RMS) | 90.5% | 90.5% | **90.2%** | 89.6% |
+| Electrode off (x0.01) | 92.2% | 24.4% | **91.2%** | 91.6% |
+| Clipping (peak at 2x the rail) | 92.2% | 17.9% | **88.7%** | 91.6% |
+| Mains hum (4x the EMG power) | 92.2% | 92.2% | **91.9%** | 91.6% |
+| Motion (3x the EMG RMS) | 92.2% | 92.2% | **91.9%** | 91.6% |
 
 Each cell averages 160 cases (16 people x 10 channels).
 
@@ -130,7 +130,7 @@ Each cell averages 160 cases (16 people x 10 channels).
 - Hum and motion don't hurt the classifier at all. The mains notch and the
   20 Hz high-pass already remove them, so the channel is still useful.
 - False alarms cost a little: with hum or motion, which the classifier
-  shrugs off, the monitor scores 0.2-0.3 points below no monitor, because in
+  shrugs off, the monitor scores about 0.3 points below no monitor, because in
   about 4.5% of windows a false alarm (mostly flatline) drops a good
   channel.
 
@@ -139,7 +139,7 @@ Each cell averages 160 cases (16 people x 10 channels).
 The monitor reports all four problems, but the decoder only drops a channel
 for **flatline** or **clipping** (`quality.DROP_CHANNEL_ON`). My first version
 dropped a channel for any flag. The first full run showed that this made hum
-cost more than a point instead of nothing, for the reason above, so I changed
+cost about a point instead of almost nothing, for the reason above, so I changed
 it.
 
 Because that change was made after looking at the reported people, both
@@ -147,10 +147,10 @@ policies are in the results file:
 
 | Fault | Drop on flatline/clipping (shipped) | Drop on any flag |
 |---|---|---|
-| Electrode off | 89.3% | 89.0% |
-| Clipping | 86.9% | 86.7% |
-| Mains hum | 90.3% | 89.2% |
-| Motion | 90.2% | 89.2% |
+| Electrode off | 91.2% | 91.0% |
+| Clipping | 88.7% | 88.5% |
+| Mains hum | 91.9% | 91.2% |
+| Motion | 91.9% | 91.1% |
 
 Hum and motion still get reported in `listen`, because a person can fix
 them and they warn of worse to come.

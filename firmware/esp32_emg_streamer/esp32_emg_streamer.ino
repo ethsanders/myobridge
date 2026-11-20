@@ -1,5 +1,5 @@
 // esp32_emg_streamer: sample N analog EMG channels at 1 kHz and stream them
-// over WiFi UDP using the myobridge wire protocol (docs/PROTOCOL.md).
+// over WiFi UDP using the myobridge wire protocol (docs/protocol.md).
 //
 // Target: any ESP32 dev board (original ESP32 / WROOM-32), Arduino-ESP32 core 3.x.
 // Note: core 3.x changed the timer API. timerBegin() now takes a tick frequency
@@ -7,7 +7,7 @@
 // replaced by a single timerAlarm(). This sketch uses the 3.x calls only.
 //
 // ---------------------------------------------------------------------------
-// WIRING (MyoWare 2.0 muscle sensor, one per channel)
+// WIRING (MyoWare 2 or 2.0 muscle sensor, one per channel; docs/hardware.md)
 //
 //   MyoWare +  ->  ESP32 3V3        (power the sensor at 3.3 V so its output
 //   MyoWare -  ->  ESP32 GND         can never exceed the ESP32's ADC range)
@@ -43,11 +43,11 @@
 // above ~500 Hz, which is NOT a proper anti-aliasing filter for 1 kHz
 // sampling: wideband electronic noise between 500 Hz and many kHz folds into
 // the EMG band. Real EMG itself has almost no power up there, so gestures are
-// unaffected; the cost is a higher noise floor (docs/ALIASING.md models it at
+// unaffected; the cost is a higher noise floor (docs/aliasing.md models it at
 // about +3 dB for a first-order roll-off). OVERSAMPLE 2 samples at 2 kHz and
 // decimates with a halfband FIR (mb_decimator.h), cutting that to about +1 dB.
 // The PC still receives 1 kHz. OVERSAMPLE 2 is untested on hardware: measure
-// the rest-noise floor both ways during bring-up (docs/HARDWARE_BRINGUP.md).
+// the rest-noise floor both ways during bring-up (docs/hardware-bringup.md).
 #ifndef OVERSAMPLE
 #define OVERSAMPLE 1
 #endif
@@ -64,7 +64,7 @@ static const int ADC_MIDPOINT = 2048;           // 12-bit ADC, RAW idles at Vcc/
 
 static const uint32_t ADC_RATE_HZ = (uint32_t)SAMPLE_RATE_HZ * OVERSAMPLE;
 static const size_t PACKET_SIZE = mb::HEADER_SIZE + (size_t)NUM_CHANNELS * FRAMES_PER_PACKET * 2 +
-                                  mb::CRC_SIZE;  // wire format: docs/PROTOCOL.md
+                                  mb::CRC_SIZE;  // wire format: docs/protocol.md
 
 struct Packet {
   uint8_t bytes[PACKET_SIZE];

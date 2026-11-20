@@ -89,3 +89,18 @@ default) as a UDP datagram, UTF-8, to the game engine (default
 
 A Unity script only needs a `UdpClient` on port 5006 and `JsonUtility.FromJson`
 on each datagram; keep the latest message and act on it in `Update()`.
+
+## Lab Streaming Layer (`myobridge forward --lsl [NAME]`)
+
+The same decisions can also go out on Lab Streaming Layer, alongside the
+UDP JSON. `NAME` defaults to `myobridge`. Two streams share the device's
+source id, so a recording of both lines up:
+
+| Stream | LSL type | Channels | Rate | Content |
+|---|---|---|---|---|
+| `NAME-emg` | `EMG` | one per electrode, float32 | the device's sample rate | raw ADC counts as they arrive |
+| `NAME-gestures` | `Markers` | 1, string | irregular | `{"gesture": "fist", "confidence": 0.9734, "sample_index": 12000}` |
+
+`sample_index` counts samples since the decoder started, so a marker can be
+placed exactly on the EMG timeline. The streams are made by
+`myobridge.LslOutlets`, which other programs can use directly.

@@ -1,0 +1,105 @@
+site_name: myobridge
+site_description: Open EMG gesture decoding, from an ESP32 forearm band to a game engine, benchmarked on public data.
+site_url: https://ethsanders.github.io/myobridge/
+repo_url: https://github.com/ethsanders/myobridge
+repo_name: ethsanders/myobridge
+edit_uri: edit/main/docs/
+copyright: MIT licensed. Datasets belong to their authors.
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+nav:
+  - Home: index.md
+  - Live demo: demo/index.html
+  - Guides:
+      - Getting started: getting-started.md
+      - Build the armband: hardware.md
+      - First sessions on hardware: hardware-bringup.md
+      - Send gestures to a game: protocol.md
+  - How it works:
+      - Overview: how-it-works.md
+      - Signal quality monitor: signal-quality.md
+      - Does 1 kHz alias?: aliasing.md
+  - Results:
+      - All experiments: results.md
+      - Datasets and splits: datasets.md
+  - API reference:
+      - Overview: api/index.md
+      - Live decoding: api/decoding.md
+      - Signal processing: api/signal.md
+      - Streaming and replay: api/streaming.md
+      - Datasets and evaluation: api/evaluation.md
+      - Firmware models: api/firmware.md
+  - Project:
+      - Contributing: contributing.md
+      - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            filters: ["!^_"]
+            heading_level: 2
+
+exclude_docs: |
+  __pycache__/
+  demo/*.test.mjs
+
+validation:
+  links:
+    not_found: warn
+    anchors: warn

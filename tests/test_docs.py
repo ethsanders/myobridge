@@ -53,8 +53,8 @@ def assert_quoted(text: str, *snippets: str) -> None:
 
 
 README = "README.md"
-RESULTS_MD = "docs/RESULTS.md"
-QUALITY_MD = "docs/SIGNAL_QUALITY.md"
+RESULTS_MD = "docs/results.md"
+QUALITY_MD = "docs/signal-quality.md"
 
 
 def test_within_session_and_channels() -> None:
@@ -94,7 +94,7 @@ def test_aliasing() -> None:
     cases = _load("aliasing")["white_noise_model"]["cases"]
     before = f"+{cases['order1_fs1000']['noise_floor_increase_db']:.1f} dB"
     after = f"+{cases['order1_fs2000_halfband']['noise_floor_increase_db']:.1f} dB"
-    for doc in (README, RESULTS_MD, "docs/ALIASING.md"):
+    for doc in (README, RESULTS_MD, "docs/aliasing.md"):
         text = _text(doc)
         assert_quoted(text, before)
         assert after in text or after.replace(" dB", "") in text
@@ -136,3 +136,11 @@ def test_quality_defaults_match_benchmark() -> None:
         assert getattr(cfg, name) == pytest.approx(value, abs=0.025), name
     table = _text(QUALITY_MD)
     assert_quoted(table, *(f"{value:.3f}" for value in chosen.values()))
+
+
+def test_readme_example_runs() -> None:
+    """The quick-start code in the README is real code."""
+    text = _text(README)
+    start = text.index("```python\n") + len("```python\n")
+    code = text[start : text.index("```", start)]
+    exec(compile(code, "README.md", "exec"), {})

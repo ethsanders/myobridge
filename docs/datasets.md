@@ -52,7 +52,7 @@ Why it's here: day-to-day drift is the main thing that breaks a wearable
 gesture model, and this is the longest public record of it I know of. It also
 has 4 channels like myobridge, and its 2048 Hz rate lets us emulate what a
 1 kHz system with a poor anti-aliasing filter would have recorded
-([ALIASING.md](ALIASING.md)).
+([aliasing.md](aliasing.md)).
 
 The 4th channel is about 1000x smaller in amplitude than the other three on
 every day, and the mirror doesn't say why. Everything downstream is

@@ -1,6 +1,6 @@
 """Binary wire protocol shared by the ESP32 firmware and the Python receiver.
 
-One UDP datagram = one packet. Everything is little-endian. See docs/PROTOCOL.md.
+One UDP datagram = one packet. Everything is little-endian. See docs/protocol.md.
 
     offset  size  field
     0       2     magic          b"MB"

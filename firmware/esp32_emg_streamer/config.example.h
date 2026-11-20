@@ -12,5 +12,5 @@
 
 // 1 = sample at 1 kHz (default). 2 = sample at 2 kHz and filter down to 1 kHz
 // on the ESP32, which lowers the aliased noise floor (see the sketch and
-// docs/ALIASING.md). The PC sees 1 kHz either way. 2 is untested on hardware.
+// docs/aliasing.md). The PC sees 1 kHz either way. 2 is untested on hardware.
 #define OVERSAMPLE 1

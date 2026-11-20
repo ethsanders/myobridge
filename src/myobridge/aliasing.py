@@ -6,7 +6,7 @@ Two separate questions, because they have different answers:
    skin and fat between muscle and electrode act as a low-pass filter). The
    MultiDay recordings, sampled at 2048 Hz, let us *measure* this and re-run
    the whole pipeline at an emulated 1024 Hz with and without anti-alias
-   filtering (`decimate_chain`; results in docs/ALIASING.md).
+   filtering (`decimate_chain`; results in docs/aliasing.md).
 
 2. **Broadband noise.** Amplifier noise, ADC noise and digital interference
    are roughly white up to tens of kHz. Whatever is left of them above

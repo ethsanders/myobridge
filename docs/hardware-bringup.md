@@ -66,7 +66,7 @@ myobridge record --seconds 30 --out rest_os1.npz   # OVERSAMPLE 1
 myobridge record --seconds 30 --out rest_os2.npz   # OVERSAMPLE 2
 ```
 
-**What the model predicts** ([ALIASING.md](ALIASING.md)): if the MyoWare's
+**What the model predicts** ([aliasing.md](aliasing.md)): if the MyoWare's
 upper roll-off is first order and its wideband noise dominates the rest
 signal, the folded noise floor drops from +2.9 dB to +1.0 dB, so the rest RMS
 should fall by about 20% with `OVERSAMPLE 2` *beyond* what step 2 showed for
@@ -76,7 +76,7 @@ the ADC alone.
   Keep `OVERSAMPLE 2`.
 - **Same drop as the ADC alone:** the MyoWare's roll-off is steeper than first
   order, or its noise isn't white that far up. `OVERSAMPLE 2` still helps the
-  ADC noise; note the measured numbers in ALIASING.md.
+  ADC noise; note the measured numbers in aliasing.md.
 - **No change:** something other than broadband noise sets the floor
   (mains hum, a loose electrode). Look at `mains share` in the printout and
   at step 5.
@@ -102,7 +102,7 @@ myobridge --mains 50 listen     # in Europe; 60 elsewhere
 
 Relax for the first 3 s (this sets each channel's noise floor), then make a
 fist and open the hand. Each channel line ends with `ok` or `CHECK: ...`
-([SIGNAL_QUALITY.md](SIGNAL_QUALITY.md)):
+([signal-quality.md](signal-quality.md)):
 
 | Message | Usual cause | Fix |
 |---|---|---|
@@ -122,7 +122,7 @@ myobridge forward --model model.npz --verbose
 
 **Expect:** with 4 sensors placed on different muscles, 5 gestures should
 mostly come out right. On the public 3DC data, 4 well-spread channels give
-about 81% for 11 gestures within one sitting ([RESULTS.md](RESULTS.md)),
+about 81% for 11 gestures within one sitting ([results.md](results.md)),
 and fewer gestures are easier.
 
 ## 7. The next day

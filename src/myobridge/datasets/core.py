@@ -6,7 +6,7 @@ this module turns that into a list of `Recording`s.
 
 The data itself is NOT part of this repository. `fetch()` clones the public
 mirror the LibEMG project keeps on GitHub, at a pinned commit, so every number
-in docs/RESULTS.md comes from exactly the same bytes.
+in docs/results.md comes from exactly the same bytes.
 """
 
 from __future__ import annotations
