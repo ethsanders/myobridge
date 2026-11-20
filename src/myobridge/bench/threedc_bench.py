@@ -13,6 +13,11 @@ cross_subject    leave one person out: train on the other 21, test on the new
                  person, with and without a few seconds of their calibration.
                  Recalibration settings are chosen on persons 1-6 only;
                  persons 7-22 are reported.
+feature_sets     within-subject accuracy for each feature set, on all 10 and
+                 the even 4 channels. The default set was picked on persons
+                 1-6; persons 7-22 are the unbiased comparison.
+classifiers      LDA against SVM, random forest and an MLP (scikit-learn, if
+                 installed) on persons 7-22 with the default features.
 """
 
 from __future__ import annotations
@@ -38,7 +43,7 @@ from ..evaluation import (
     prefilter,
     summarize,
 )
-from ..features import channel_columns
+from ..features import FEATURE_SETS, channel_columns
 from .common import (
     ADAPT_GRID,
     METHODS,
@@ -127,7 +132,7 @@ def channels(p: Prepared, subjects: Sequence[int], quick: bool) -> dict[str, Any
         # mean over people, for every subset of size k
         means = []
         for sub in subsets:
-            cols = channel_columns(sub, n_ch)
+            cols = channel_columns(sub, n_ch, p.cfg.feature_set)
             means.append(float(np.mean([_fit_score(tr, te, cols) for tr, te in tables.values()])))
         order = np.argsort(means)
         by_k[str(k)] = {
@@ -136,7 +141,7 @@ def channels(p: Prepared, subjects: Sequence[int], quick: bool) -> dict[str, Any
             "worst": {"channels": subsets[order[0]], "accuracy": means[order[0]]},
             "best": {"channels": subsets[order[-1]], "accuracy": means[order[-1]]},
         }
-    cols = channel_columns(EVEN_4, n_ch)
+    cols = channel_columns(EVEN_4, n_ch, p.cfg.feature_set)
     even = [_fit_score(tr, te, cols) for tr, te in tables.values()]
     return {
         "by_k": by_k,
@@ -214,6 +219,70 @@ def cross_subject(p: Prepared, val: Sequence[int], report: Sequence[int]) -> dic
     return out
 
 
+def feature_sets(p: Prepared, val: Sequence[int], report: Sequence[int]) -> dict[str, Any]:
+    acc: dict[tuple[str, str, int], float] = {}  # (feature set, channels, person) -> accuracy
+    for name in FEATURE_SETS:
+        cfg = replace(p.cfg, feature_set=name)
+        for s in [*val, *report]:
+            t = p.table(p.indices([s]), p.indices([s], [TRAIN]), cfg)
+            tr, te = t.where(sessions=[TRAIN]), t.where(sessions=[TEST])
+            acc[name, "all_channels", s] = _fit_score(tr, te)
+            acc[name, "even_4", s] = _fit_score(tr, te, t.columns(EVEN_4))
+    out: dict[str, Any] = {"default": p.cfg.feature_set, "chosen_on": "validation_subjects"}
+    keys = ("all_channels", "even_4")
+    for name in FEATURE_SETS:
+        out[name] = {
+            group: {k: summarize([acc[name, k, s] for s in people]) for k in keys}
+            for group, people in (("validation", val), ("report", report))
+        }
+    if p.cfg.feature_set != "td":  # paired: same person, same split
+        out["default_minus_td_report"] = {
+            k: summarize([acc[p.cfg.feature_set, k, s] - acc["td", k, s] for s in report])
+            for k in keys
+        }
+    return out
+
+
+def classifiers(p: Prepared, report: Sequence[int]) -> dict[str, Any]:
+    """LDA vs common nonlinear classifiers. Needs scikit-learn (the dev extra)."""
+    try:
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.neural_network import MLPClassifier
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.svm import SVC
+    except ImportError:
+        return {"skipped": "scikit-learn is not installed"}
+
+    def models() -> dict[str, Any]:
+        return {
+            "lda": LDAClassifier(),
+            "svm_rbf": make_pipeline(StandardScaler(), SVC(C=10.0, gamma="scale")),
+            "random_forest": RandomForestClassifier(n_estimators=200, random_state=0, n_jobs=-1),
+            "mlp": make_pipeline(
+                StandardScaler(),
+                MLPClassifier(hidden_layer_sizes=(128,), max_iter=300, random_state=0),
+            ),
+        }
+
+    scores: dict[str, list[float]] = {k: [] for k in models()}
+    for s in report:
+        t = p.table(p.indices([s]), p.indices([s], [TRAIN]))
+        tr, te = t.where(sessions=[TRAIN]), t.where(sessions=[TEST])
+        for name, model in models().items():
+            scores[name].append(accuracy(te.label, model.fit(tr.X, tr.label).predict(te.X)))
+    return {
+        "feature_set": p.cfg.feature_set,
+        "settings_note": "fixed in advance, not tuned",
+        "accuracy": {k: summarize(v) for k, v in scores.items()},
+        "lda_minus": {
+            k: summarize(np.subtract(scores["lda"], v).tolist())
+            for k, v in scores.items()
+            if k != "lda"
+        },
+    }
+
+
 def run(opts: RunOptions) -> dict[str, Any]:
     cfg = FeatureConfig()
     subjects = list(range(1, 23))
@@ -232,6 +301,10 @@ def run(opts: RunOptions) -> dict[str, Any]:
         wins = windows(p, subjects)
     with timed("cross-subject"):
         cross = cross_subject(p, val, report)
+    with timed("feature sets"):
+        fsets = feature_sets(p, val, report)
+    with timed("classifiers"):
+        clfs = classifiers(p, report)
     payload = {
         "provenance": provenance(
             ds,
@@ -249,6 +322,8 @@ def run(opts: RunOptions) -> dict[str, Any]:
         "channels": chans,
         "windows": wins,
         "cross_subject": cross,
+        "feature_sets": fsets,
+        "classifiers": clfs,
     }
     print(f"  wrote {write_result(opts, 'threedc', payload)}")
     return payload

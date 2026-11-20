@@ -2,7 +2,7 @@
 
 Every number on a figure comes from a results file, so re-running the
 benchmarks and then this module regenerates the docs exactly. The tables in
-docs/RESULTS.md carry the same numbers for anyone who can't see the colours.
+docs/results.md carry the same numbers for anyone who can't see the colours.
 """
 
 from __future__ import annotations

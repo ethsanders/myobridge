@@ -13,17 +13,19 @@
       "window_s": 0.2,
       "step_s": 0.05,
       "vote_k": 5,
+      "feature_set": "td-ar-psd",
+      "n_features": 60,
       "machine": "x86_64"
     }
   },
   "per_packet_us": {
-    "median": 78.0605,
-    "p99": 166.10806,
-    "max": 1349.109,
+    "median": 100.579,
+    "p99": 534.09431,
+    "max": 1720.202,
     "n": 14950
   },
   "packet_period_us": 20000.0,
-  "cpu_share_of_real_time": 0.005022,
+  "cpu_share_of_real_time": 0.010212,
   "decision_delay_estimate_ms": {
     "packet_buffering": 20.0,
     "window_centre": 100.0,
@@ -31,14 +33,14 @@
     "note": "how long after a gesture starts the smoothed output can switch, ignoring network and muscle onset; computed from the settings, not measured"
   },
   "adapt_ms": {
-    "mean": 0.144572,
+    "mean": 0.257228,
     "new_windows": 184,
     "classes": 11
   },
   "features_batch_vs_loop": {
     "windows": 2000,
-    "batch_s": 0.052237,
-    "loop_s": 0.078012,
+    "batch_s": 0.169297,
+    "loop_s": 0.45713,
     "identical": true
   }
 }

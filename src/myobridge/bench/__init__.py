@@ -2,7 +2,7 @@
 
 Each experiment is a module with `run(RunOptions) -> dict` that writes
 results/<name>.json; `figures.make_all` then draws docs/figures/ from those
-files. docs/RESULTS.md explains every experiment's splits and numbers.
+files. docs/results.md explains every experiment's splits and numbers.
 """
 
 from __future__ import annotations

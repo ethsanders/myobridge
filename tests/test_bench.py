@@ -2,7 +2,7 @@
 
 These check that every experiment runs, respects its splits, and writes a
 complete results file. The numbers themselves only mean something on the
-real data; see docs/RESULTS.md.
+real data; see docs/results.md.
 """
 
 from __future__ import annotations

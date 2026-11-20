@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 
 from ..classifier import LDAClassifier, adapt
-from ..features import extract_features
+from ..features import DEFAULT_FEATURE_SET, extract_features, feature_set_names
 from ..pipeline import GesturePipeline
 from .common import RunOptions, provenance, write_result
 
@@ -25,12 +25,13 @@ PACKET = 20
 WINDOW_S = 0.2
 STEP_S = 0.05
 VOTE_K = 5
+N_FEATURES = len(feature_set_names(DEFAULT_FEATURE_SET)) * N_CHANNELS
 
 
 def run(opts: RunOptions) -> dict[str, Any]:
     rng = np.random.default_rng(0)
     n_classes = 6
-    X = rng.standard_normal((600, 5 * N_CHANNELS))
+    X = rng.standard_normal((600, N_FEATURES))
     y = np.repeat(np.arange(n_classes), 100)
     model = LDAClassifier().fit(X, y)
     pipe = GesturePipeline(model, FS, N_CHANNELS, WINDOW_S, STEP_S, VOTE_K)
@@ -55,8 +56,8 @@ def run(opts: RunOptions) -> dict[str, Any]:
     loop = np.array([extract_features(w) for w in windows])
     t_loop = time.perf_counter() - t0
 
-    # recalibration with adapt(): 11 gestures x 1 s of new windows, a 20-feature model
-    Xb = rng.standard_normal((11 * 200, 5 * N_CHANNELS))
+    # recalibration with adapt(): 11 gestures x 1 s of new windows, default features
+    Xb = rng.standard_normal((11 * 200, N_FEATURES))
     yb = np.repeat(np.arange(11), 200)
     base = LDAClassifier().fit(Xb, yb)
     Xn, yn = Xb[::12] + 0.5, yb[::12]
@@ -76,6 +77,8 @@ def run(opts: RunOptions) -> dict[str, Any]:
                 "window_s": WINDOW_S,
                 "step_s": STEP_S,
                 "vote_k": VOTE_K,
+                "feature_set": DEFAULT_FEATURE_SET,
+                "n_features": N_FEATURES,
                 "machine": platform.processor() or platform.machine(),
             },
         ),

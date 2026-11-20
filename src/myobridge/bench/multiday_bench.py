@@ -10,11 +10,14 @@ Inside a day each gesture is one continuous ~6 s hold. Windows starting at or
 after 2.5 s are the day's test windows. Calibration data, when a method uses
 it, comes from [1.0, 1.0 + C] s of the same recordings, so there is always a
 gap of at least one window between calibration and test samples.
+
+feature_sets compares the feature sets with no recalibration and with 1 s of
+adapt(). The default set was picked on the validation days.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 import numpy as np
@@ -31,6 +34,7 @@ from ..evaluation import (
     prefilter,
     summarize,
 )
+from ..features import FEATURE_SETS
 from .common import (
     ADAPT_GRID,
     METHODS,
@@ -66,7 +70,10 @@ def _scores(model: LDAClassifier, t: FeatureTable) -> tuple[float, float]:
     return accuracy(t.label, pred), balanced_accuracy(t.label, pred)
 
 
-def build_table(opts: RunOptions, cfg: FeatureConfig) -> tuple[datasets.Dataset, FeatureTable]:
+def build_tables(
+    opts: RunOptions, cfg: FeatureConfig
+) -> tuple[datasets.Dataset, dict[str, FeatureTable]]:
+    """Feature tables for every feature set (filtering and thresholds are shared)."""
     days = None
     if opts.quick:
         days = TRAIN_DAYS[:3] + VAL_DAYS[:3] + TEST_DAYS[:6]
@@ -81,8 +88,13 @@ def build_table(opts: RunOptions, cfg: FeatureConfig) -> tuple[datasets.Dataset,
             cfg,
             clean=[clean[i] for i in train_idx],
         )
-        table = featurize(ds.recordings, ds.mains_hz, cfg, th, clean=clean)
-    return ds, table
+        tables = {
+            name: featurize(
+                ds.recordings, ds.mains_hz, replace(cfg, feature_set=name), th, clean=clean
+            )
+            for name in FEATURE_SETS
+        }
+    return ds, tables
 
 
 def recalibration(table: FeatureTable) -> dict[str, Any]:
@@ -179,14 +191,58 @@ def training_days(table: FeatureTable) -> dict[str, Any]:
     return out
 
 
+def _adapted(
+    base: LDAClassifier, base_t: FeatureTable, t: FeatureTable, d: int, s: AdaptSetting, sec: float
+) -> float:
+    cal = _cal(t, d, sec)
+    m = recalibrate("adapt", base, base_t.X, base_t.label, cal.X, cal.label, s)
+    return _scores(m, _test(t, d))[0]
+
+
+def feature_sets(
+    tables: dict[str, FeatureTable], default: str, seconds: float = 1.0
+) -> dict[str, Any]:
+    """No recalibration vs adapt() with `seconds` of new data, for each feature set."""
+    out: dict[str, Any] = {"default": default, "chosen_on": "validation_days"}
+    none: dict[str, list[float]] = {}
+    adapt: dict[str, list[float]] = {}
+    for name, t in tables.items():
+        days = sorted(set(t.session.tolist()))
+        val = [d for d in days if d in VAL_DAYS]
+        test = [d for d in days if d in TEST_DAYS]
+        base_t = t.where(sessions=[d for d in days if d in TRAIN_DAYS])
+        base = LDAClassifier().fit(base_t.X, base_t.label)
+        chosen = best_setting(
+            {s: [_adapted(base, base_t, t, d, s, seconds) for d in val] for s in ADAPT_GRID}
+        )
+        res: dict[str, Any] = {"adapt_setting": asdict(chosen)}
+        for group, group_days in (("validation", val), ("test", test)):
+            n = [_scores(base, _test(t, d))[0] for d in group_days]
+            a = [_adapted(base, base_t, t, d, chosen, seconds) for d in group_days]
+            res[group] = {"none": summarize(n), "adapt": summarize(a)}
+            if group == "test":
+                none[name], adapt[name] = n, a
+        out[name] = res
+    out["adapt_seconds"] = seconds
+    if default != "td":  # paired over the same test days
+        out["default_minus_td_test"] = {
+            "none": summarize(np.subtract(none[default], none["td"]).tolist()),
+            "adapt": summarize(np.subtract(adapt[default], adapt["td"]).tolist()),
+        }
+    return out
+
+
 def run(opts: RunOptions) -> dict[str, Any]:
     cfg = FeatureConfig()
-    ds, table = build_table(opts, cfg)
+    ds, tables = build_tables(opts, cfg)
+    table = tables[cfg.feature_set]
     with timed("recalibration"):
         recal = recalibration(table)
     with timed("decay + training days"):
         dec = decay(table)
         tdays = training_days(table)
+    with timed("feature sets"):
+        fsets = feature_sets(tables, cfg.feature_set)
     payload = {
         "provenance": provenance(
             ds,
@@ -203,6 +259,7 @@ def run(opts: RunOptions) -> dict[str, Any]:
         "recalibration": recal,
         "decay_by_gap_days": dec,
         "accuracy_by_training_days": tdays,
+        "feature_sets": fsets,
     }
     print(f"  wrote {write_result(opts, 'multiday', payload)}")
     return payload

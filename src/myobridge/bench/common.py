@@ -3,7 +3,7 @@
 Each experiment writes one JSON file to results/. Besides the numbers, the
 file records everything needed to reproduce them: the dataset's pinned
 commit, the feature settings, the software versions and the exact splits.
-docs/RESULTS.md and the README quote these files; a test checks they agree.
+docs/results.md and the README quote these files; a test checks they agree.
 """
 
 from __future__ import annotations

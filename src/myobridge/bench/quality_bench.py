@@ -31,11 +31,11 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from .. import datasets
+from .. import datasets, faults
 from ..classifier import LDAClassifier
+from ..datasets import threedc
 from ..datasets.core import Dataset, Recording
 from ..evaluation import FeatureConfig, FeatureTable, accuracy, featurize, fit_thresholds, summarize
-from ..features import channel_columns
 from ..quality import DROP_CHANNEL_ON, Issue, QualityConfig, assess, rest_floor, scan_recording
 from .common import RunOptions, provenance, timed, write_result
 
@@ -43,7 +43,7 @@ FloatArray = NDArray[np.float64]
 
 VAL_SUBJECTS = list(range(1, 7))
 REPORT_SUBJECTS = list(range(7, 23))
-RAIL = 32700.0  # the 3DC armband's ADC is signed 16-bit; clean data reaches -32763
+RAIL = threedc.ADC_RAIL
 FAULT_ONSET_S = 1.5
 FALSE_ALARM_TARGET = 0.01
 HOP_S = 0.25
@@ -61,44 +61,19 @@ Fault = Callable[[FloatArray, float, float, np.random.Generator], FloatArray]
 
 
 def _lead_off(scale: float) -> Fault:
-    def f(x: FloatArray, band_rms: float, fs: float, rng: np.random.Generator) -> FloatArray:
-        return x.mean() + (x - x.mean()) * scale
-
-    return f
+    return lambda x, band_rms, fs, rng: faults.lead_off(x, scale)
 
 
 def _hum(power_ratio: float, mains: float) -> Fault:
-    def f(x: FloatArray, band_rms: float, fs: float, rng: np.random.Generator) -> FloatArray:
-        t = np.arange(len(x)) / fs
-        amp = np.sqrt(2.0 * power_ratio) * band_rms
-        out: FloatArray = x + amp * np.sin(2 * np.pi * mains * t + rng.uniform(0, 2 * np.pi))
-        return out
-
-    return f
+    return lambda x, band_rms, fs, rng: faults.mains_hum(x, band_rms, fs, mains, power_ratio, rng)
 
 
 def _motion(rms_ratio: float) -> Fault:
-    """Slow wandering baseline, like a cable being tugged: noise low-passed at ~5 Hz."""
-
-    def f(x: FloatArray, band_rms: float, fs: float, rng: np.random.Generator) -> FloatArray:
-        n = len(x)
-        knots = rng.standard_normal(int(n / fs * 10) + 2)  # 10 random points per second
-        wander = np.interp(np.arange(n) / fs * 10, np.arange(len(knots)), knots)
-        wander *= rms_ratio * band_rms / max(float(np.std(wander)), 1e-12)
-        return x + wander
-
-    return f
+    return lambda x, band_rms, fs, rng: faults.motion(x, band_rms, fs, rms_ratio, rng)
 
 
 def _clip(overdrive: float) -> Fault:
-    """Too much gain: scale so the 99th-percentile peak is `overdrive` x the ADC rail."""
-
-    def f(x: FloatArray, band_rms: float, fs: float, rng: np.random.Generator) -> FloatArray:
-        centred = x - x.mean()
-        gain = overdrive * RAIL / max(float(np.percentile(np.abs(centred), 99)), 1e-12)
-        return np.clip(centred * gain, -RAIL - 1, RAIL + 1)
-
-    return f
+    return lambda x, band_rms, fs, rng: faults.clipping(x, RAIL, overdrive)
 
 
 def fault_menu(mains: float) -> dict[str, tuple[Issue, dict[str, Fault]]]:
@@ -232,7 +207,7 @@ class _DropModels:
     def get(self, bad: tuple[int, ...]) -> LDAClassifier:
         if bad not in self.cache:
             keep = [c for c in range(self.n_channels) if c not in bad]
-            cols = channel_columns(keep, self.n_channels)
+            cols = self.train.columns(keep)
             self.cache[bad] = LDAClassifier().fit(self.train.X[:, cols], self.train.label)
         return self.cache[bad]
 
@@ -257,7 +232,7 @@ def _decode_with_monitor(
             bad = ()
         extra[i] = bool(set(bad) - {broken_channel})
         keep = [c for c in range(n_ch) if c not in bad]
-        X = t.X[i : i + 1] if not bad else t.X[i : i + 1, channel_columns(keep, n_ch)]
+        X = t.X[i : i + 1] if not bad else t.X[i : i + 1, t.columns(keep)]
         pred[i] = int(models.get(bad).predict(X)[0])
     return pred, float(extra.mean())
 
@@ -317,7 +292,7 @@ def fault_tolerance(
                     res[name].append(accuracy(t.label, pred))
                     healthy_dropped[scen][name].append(extra)
                 keep = [c for c in range(n_ch) if c != ch]
-                oracle = models.get((ch,)).predict(t.X[:, channel_columns(keep, n_ch)])
+                oracle = models.get((ch,)).predict(t.X[:, t.columns(keep)])
                 res["oracle_drop"].append(accuracy(t.label, oracle))
     return {
         "scenarios": {
