@@ -28,3 +28,7 @@ results/*.quick.json
 .mypy_cache/
 coverage.xml
 htmlcov/
+docs/demo/*.whl
+docs/demo/wheel.json
+site/
+.hypothesis/

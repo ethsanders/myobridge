@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use myobridge in your work, please cite it as below."
+title: "myobridge: open EMG gesture decoding from an ESP32 forearm band"
+type: software
+authors:
+  - family-names: Sanders
+    given-names: Ethan
+repository-code: "https://github.com/ethsanders/myobridge"
+url: "https://ethsanders.github.io/myobridge/"
+license: MIT
+version: 0.2.0
+keywords:
+  - electromyography
+  - EMG
+  - gesture recognition
+  - ESP32
+  - brain-computer interface
