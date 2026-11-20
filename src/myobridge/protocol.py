@@ -26,6 +26,7 @@ VERSION = 1
 HEADER = struct.Struct("<2sBBHIQH")  # 20 bytes, matches the table above
 CRC_SIZE = 2
 SEQ_MODULO = 2**32
+MAX_PAYLOAD = 65507  # largest UDP payload over IPv4
 
 
 class ProtocolError(ValueError):
@@ -33,7 +34,7 @@ class ProtocolError(ValueError):
 
     def __init__(self, kind: str, message: str):
         super().__init__(message)
-        self.kind = kind  # "truncated", "magic", "version" or "crc"
+        self.kind = kind  # "truncated", "magic", "version", "crc" or "format"
 
 
 # --------------------------------------------------------------------------- CRC
@@ -84,12 +85,32 @@ class Packet:
         return int(self.samples.shape[0])
 
 
+def packet_size(n_channels: int, n_frames: int) -> int:
+    """Bytes on the wire for one packet."""
+    return HEADER.size + 2 * n_channels * n_frames + CRC_SIZE
+
+
 def encode_packet(samples: np.ndarray, seq: int, timestamp_us: int, sample_rate: int) -> bytes:
-    """Build one packet from an (n_frames, n_channels) int16 array."""
+    """Build one packet from an (n_frames, n_channels) int16 array.
+
+    Raises ValueError if a field doesn't fit the header or the packet doesn't
+    fit in one UDP datagram. `seq` is taken modulo 2**32.
+    """
     samples = np.asarray(samples)
     if samples.ndim != 2 or samples.dtype != np.int16:
         raise ValueError("samples must be a 2-D int16 array (n_frames, n_channels)")
     n_frames, n_channels = samples.shape
+    if not 1 <= n_channels <= 255:
+        raise ValueError(f"n_channels must be 1..255, got {n_channels}")
+    if n_frames > 0xFFFF:
+        raise ValueError(f"n_frames must be at most 65535, got {n_frames}")
+    if not 1 <= sample_rate <= 0xFFFF:
+        raise ValueError(f"sample_rate must be 1..65535 Hz, got {sample_rate}")
+    if not 0 <= timestamp_us < 2**64:
+        raise ValueError(f"timestamp_us must be 0..2**64-1, got {timestamp_us}")
+    size = packet_size(n_channels, n_frames)
+    if size > MAX_PAYLOAD:
+        raise ValueError(f"packet would be {size} bytes, over the UDP limit of {MAX_PAYLOAD}")
     header = HEADER.pack(
         MAGIC, VERSION, n_channels, sample_rate, seq % SEQ_MODULO, timestamp_us, n_frames
     )
@@ -107,12 +128,22 @@ def decode_packet(data: bytes) -> Packet:
         raise ProtocolError("magic", f"bad magic {magic!r}")
     if version != VERSION:
         raise ProtocolError("version", f"unsupported version {version}")
-    expected_len = HEADER.size + 2 * n_channels * n_frames + CRC_SIZE
+    expected_len = packet_size(n_channels, n_frames)
+    if expected_len > MAX_PAYLOAD:
+        raise ProtocolError(
+            "format", f"{n_frames} frames x {n_channels} channels can't fit in one datagram"
+        )
     if len(data) != expected_len:
         raise ProtocolError("truncated", f"length {len(data)} != expected {expected_len}")
     (crc_received,) = struct.unpack_from("<H", data, expected_len - CRC_SIZE)
     if crc16_ccitt_false(data[: expected_len - CRC_SIZE]) != crc_received:
         raise ProtocolError("crc", "CRC mismatch")
+    # The length check already bounds n_frames; these two would pass it but
+    # make the packet unusable downstream.
+    if n_channels == 0:
+        raise ProtocolError("format", "n_channels is 0")
+    if sample_rate == 0:
+        raise ProtocolError("format", "sample_rate is 0")
     flat = np.frombuffer(data, dtype="<i2", count=n_channels * n_frames, offset=HEADER.size)
     samples = flat.reshape(n_frames, n_channels).astype(np.int16)
     return Packet(seq=seq, timestamp_us=ts, sample_rate=sample_rate, samples=samples)

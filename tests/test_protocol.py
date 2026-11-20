@@ -1,8 +1,11 @@
+import struct
+
 import numpy as np
 import pytest
 
 from myobridge.protocol import (
     HEADER,
+    MAX_PAYLOAD,
     ProtocolError,
     SequenceTracker,
     crc16_ccitt_false,
@@ -152,3 +155,50 @@ def test_tracker_device_restart():
     assert t.stats.restarts == 1
     assert t.stats.dropped == 0
     assert t.accept(1)
+
+
+@pytest.mark.parametrize(
+    ("shape", "seq", "ts", "fs"),
+    [
+        ((1, 256), 0, 0, 1000),  # too many channels for the u8 field
+        ((1, 0), 0, 0, 1000),  # no channels
+        ((1, 4), 0, -1, 1000),  # negative timestamp
+        ((1, 4), 0, 2**64, 1000),  # timestamp overflows u64
+        ((1, 4), 0, 0, 0),  # no sample rate
+        ((1, 4), 0, 0, 70_000),  # sample rate overflows u16
+        ((70_000, 1), 0, 0, 1000),  # n_frames overflows u16
+        ((20_000, 2), 0, 0, 1000),  # 80 kB: over the UDP payload limit
+    ],
+)
+def test_encode_rejects_values_that_dont_fit(shape, seq, ts, fs):
+    with pytest.raises(ValueError):
+        encode_packet(np.zeros(shape, dtype=np.int16), seq, ts, fs)
+
+
+def test_largest_datagram_round_trips():
+    frames = (MAX_PAYLOAD - HEADER.size - 2) // 2  # one channel, as big as fits
+    data = encode_packet(np.ones((frames, 1), dtype=np.int16), 0, 0, 1000)
+    assert len(data) <= MAX_PAYLOAD
+    assert decode_packet(data).n_frames == frames
+
+
+def forge(n_channels, sample_rate, n_frames, body=b""):
+    """A packet with a valid CRC but arbitrary header fields."""
+    header = HEADER.pack(b"MB", 1, n_channels, sample_rate, 0, 0, n_frames) + body
+    return header + struct.pack("<H", crc16_ccitt_false(header))
+
+
+@pytest.mark.parametrize(
+    ("n_channels", "sample_rate", "n_frames"),
+    [(0, 1000, 20), (4, 0, 0), (255, 1000, 200)],  # the last would be 102 kB
+)
+def test_decode_rejects_unusable_headers(n_channels, sample_rate, n_frames):
+    body = bytes(2 * n_channels * n_frames) if n_channels * n_frames < 1000 else b""
+    with pytest.raises(ProtocolError) as err:
+        decode_packet(forge(n_channels, sample_rate, n_frames, body))
+    assert err.value.kind == "format"
+
+
+def test_zero_frame_packet_is_valid():
+    pkt = decode_packet(encode_packet(np.zeros((0, 4), dtype=np.int16), 3, 0, 1000))
+    assert pkt.samples.shape == (0, 4)
