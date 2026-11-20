@@ -38,6 +38,29 @@ jobs:
       - name: Latency benchmark (no data needed)
         run: myobridge bench latency --quick --no-figures --out /tmp/results
 
+  package:
+    # Build the sdist and wheel, check their metadata, and use the wheel from a
+    # clean environment, so a packaging mistake can't hide behind `pip install -e`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          pip install build twine
+          python -m build
+          twine check --strict dist/*
+      - name: Install the wheel in a fresh venv and use it
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/venv/bin/myobridge --version
+          /tmp/venv/bin/python -c "import myobridge; print(myobridge.__all__)"
+          /tmp/venv/bin/python $GITHUB_WORKSPACE/examples/decode_simulated.py
+
   firmware:
     runs-on: ubuntu-latest
     strategy:

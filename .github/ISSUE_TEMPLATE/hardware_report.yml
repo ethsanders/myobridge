@@ -1,0 +1,20 @@
+name: Hardware report
+description: Share how myobridge worked on your own armband.
+labels: [hardware]
+body:
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: Board, sensors, electrode placement, OVERSAMPLE setting, mains frequency.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: What you measured
+      description: Rest noise, packet loss, accuracy, anything from docs/hardware-bringup.md.
+  - type: textarea
+    id: problems
+    attributes:
+      label: Problems or surprises

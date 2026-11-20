@@ -1,0 +1,31 @@
+name: Bug report
+description: Something doesn't work as the docs say it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: A command or a short script. The simulator (`myobridge simulate`) is fine if the bug shows there.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `myobridge --version`, and your Python version.
+  - type: dropdown
+    id: source
+    attributes:
+      label: Where the signal comes from
+      options:
+        - Simulator
+        - My own ESP32 armband
+        - A public dataset
+        - Other
