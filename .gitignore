@@ -21,3 +21,10 @@ firmware/**/build/
 .vscode/
 .idea/
 .DS_Store
+
+# Dataset caches (the data itself lives outside the repo)
+.myobridge-cache/
+results/*.quick.json
+.mypy_cache/
+coverage.xml
+htmlcov/
