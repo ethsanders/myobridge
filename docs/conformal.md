@@ -93,9 +93,9 @@ and the first, middle and last thirds of the test days deliver 88.9%,
 88.5% and 89.8%, so the threshold isn't going stale over three months. The
 least-covered gesture still gets 81.6%; the `mondrian=True` option sets a
 threshold per gesture and lifts that to 86.1%. The adapted decoder's plain
-accuracy on these days is 89.0%. The recipe keeps that accuracy and adds a
-way to tell which decisions to trust: when the set has one gesture, which is
-61% of the time, it is right 97% of the time.
+accuracy on these days is 89.0%, so on average the 90% sets hit about as
+often as the plain decoder does. The difference is on single days: the plain
+decoder ranges from 75.7% to 94.2%, the sets from 85.2% to 93.7%.
 
 ![Coverage on each MultiDay test day, and promised vs delivered coverage](figures/conformal.png)
 
@@ -105,6 +105,50 @@ above, and with the temperature but the textbook score, 86.7%. Swapping which he
 which set the threshold gives 89.8%, so the split isn't a lucky one. The APS
 score has a random share; over five seeds the 90% row ranges from
 88.9% to 89.8%.
+
+## Against simpler rules
+
+Could something simpler do the same? `myobridge bench conformal` runs four
+simpler rules on the same adapted, temperature-scaled model and the same
+days.
+
+| At each promise | Days 31-121 | Worst day | Days within 5 points | Gestures named |
+|---|---|---|---|---|
+| Plain decoder (one guess) | 89.0% | 75.7% | 86% of days at 90% | 1 |
+| Fixed top-k, k set on days 21-30, 95% | 94.8% | 92.7% | all | 3 |
+| Sets, 95% | 93.9% [93.6, 94.1] | 91.0% | all | 1.95 |
+| Sets, 90% | 89.1% [88.7, 89.4] | 85.2% | all | 1.43 |
+
+- **A fixed number of guesses** is either too few or too many. For 90% the
+  calibration days pick one guess, which is the plain decoder and its bad
+  days. For 95% they pick three every time, where the sets average 1.95
+  for 0.9 points less coverage.
+- **Acting only when confident** is what the one-gesture sets are often used
+  for, and plain confidence does that as well or better. Rank windows by
+  the top probability and answer the same 61.0% of them as the 90% sets do:
+  those answers are right 97.9% of the time, against 97.0% for the
+  one-gesture sets. With the confidence cut-off taken from days 21-30
+  instead, it answers 57.8% and is right 98.1% of the time.
+- **A confidence cut-off aimed at an accuracy** doesn't keep its aim. Set on
+  days 21-30 to be right 95% of the time when it answers, it is right
+  93.0% of the time on average on the test days, and 78.5% on the worst
+  one. Only 60% of days land within 2 points of the aim.
+
+So the sets aren't a better way to pick out the sure decisions. What they add
+is a promise on how often the right gesture is kept, which holds day by day.
+
+**Chosen before the test days.** The recipe was picked on validation days
+alone. Fitting the temperature on days 11-15 and the threshold on days 16-20,
+then checking on days 21-30, the recipe is the only variant at 90% that is
+within 5 points on every one of those days (90.9% overall).
+
+**With fewer days to calibrate.** `myobridge fit` uses three sessions: one
+to train, one for the temperature and one for the threshold. The benchmark
+repeats that on every run of three days in a row within days 1-30 (28 runs)
+and checks each on days 31-121. At 90% the runs deliver 88.5% on average
+(85.6% to 91.7%), 64% of runs land within 2 points, and the worst single
+day across all runs is 78.0%. Three days of data give a usable promise, but
+a looser one than thirty.
 
 ## The same recipe on other data
 
@@ -159,6 +203,12 @@ days, with the textbook recipe and an electrode failure a click away.
   person, armband or task should be checked again.
 - **One person for drift.** MultiDay is one person, so the across-day result
   is one person's.
+- **Recalibration and test share a hold.** Each MultiDay test day is
+  recalibrated on seconds 1-2 of each hold and scored from second 2.5 of the
+  same holds. The thresholds come from other days, but the adapted model has
+  seen the start of every contraction it is tested on. The 3DC sitting check
+  above has no such overlap: its threshold is set before a break and checked
+  on new contractions after it.
 - **The end of a hold is harder.** In MultiDay, the last second of each hold
   is 26.8% of the test windows, and the adapted decoder is 96.7% accurate
   without it, against 89.0% with it. With those windows removed from the
@@ -182,6 +232,5 @@ and do not say how often the right gesture will be kept. Conformal prediction
 adaptive conformal inference (Gibbs & Candès 2021) are standard; the latter
 is in the module as `AdaptiveAlpha`, and in the benchmark it underdelivers
 (85.3% at 90%) because the only feedback available on a test day comes from
-the easier start of each hold. As far as I found, conformal gesture sets for
-EMG, and whether their promise survives taking the armband off and putting it
-back on, haven't been studied before.
+the easier start of each hold. I haven't found a study of conformal gesture sets for EMG across days, but
+I may have missed one; an issue pointing to it is welcome.

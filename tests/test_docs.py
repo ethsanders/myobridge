@@ -149,7 +149,8 @@ def test_conformal() -> None:
     for doc in (README, RESULTS_MD, CONFORMAL_MD):
         assert_quoted(_text(doc), pct(head["coverage"]["mean"]), ci(head["coverage"]))
     assert_quoted(_text(README), pct(head["accuracy_when_singleton"]))
-    assert_quoted(_text(README), pct(textbook["coverage"]["mean"]))
+    for doc in (README, CONFORMAL_MD, "docs/index.md"):
+        assert_quoted(_text(doc), pct(head["coverage"]["min"]))
     assert_quoted(_text("docs/index.md"), pct(head["coverage"]["mean"]))
     for doc in (RESULTS_MD, CONFORMAL_MD):
         assert_quoted(_text(doc), pct(textbook["coverage"]["mean"]), ci(textbook["coverage"]))
@@ -189,6 +190,48 @@ def test_conformal() -> None:
         page,
         pct(tail["rows"]["adapt_temp_aps"]["0.1"]["coverage"]["mean"]),
         pct(tail["rows"]["adapt_temp_aps_all_trimmed"]["0.1"]["coverage"]["mean"]),
+    )
+    # the comparison with simpler rules (README and the conformal page)
+    base90 = head["baselines"]
+    base95 = md["adapt_temp_aps"]["0.05"]["baselines"]
+    top1 = base90["top1"]["coverage"]
+    for doc in (README, CONFORMAL_MD):
+        assert_quoted(
+            _text(doc), pct(top1["min"]), pct(base90["max_prob_rejection"]["accuracy_when_named"])
+        )
+    assert_quoted(_text(README), pct(top1["mean"]), pct(base90["top1"]["share_within_5_points"]))
+    assert base90["fixed_top_k"]["k"]["mean"] == 1 and base95["fixed_top_k"]["k"]["mean"] == 3
+    assert_quoted(_text(README), pct(base95["fixed_top_k"]["coverage"]["mean"]))
+    nested = base90["max_prob_rejection_nested"]
+    assert_quoted(
+        page,
+        pct(top1["max"]),
+        pct(head["coverage"]["max"]),
+        pct(base95["fixed_top_k"]["coverage"]["mean"]),
+        pct(base95["fixed_top_k"]["coverage"]["min"]),
+        pct(md["adapt_temp_aps"]["0.05"]["coverage"]["min"]),
+        pct(nested["named_one_share"]),
+        pct(nested["accuracy_when_named"]),
+    )
+    frozen = d["multiday"]["confidence_rejection"]["adapt_temperature"]["0.95"]
+    for doc in (README, CONFORMAL_MD):
+        assert_quoted(_text(doc), pct(frozen["accuracy_when_answering"]["min"]))
+    assert_quoted(page, pct(frozen["accuracy_when_answering"]["mean"]))
+    chosen = d["multiday"]["selection_check"]["rows"]
+    assert chosen["adapt_temp_aps"]["0.1"]["share_within_5_points"] == 1.0
+    assert all(
+        r["0.1"]["share_within_5_points"] < 1.0 for k, r in chosen.items() if k != "adapt_temp_aps"
+    )
+    assert_quoted(page, pct(chosen["adapt_temp_aps"]["0.1"]["coverage"]))
+    few = d["multiday"]["few_sessions"]["0.1"]
+    for doc in (CONFORMAL_MD, "docs/your-promise.md"):
+        assert_quoted(
+            _text(doc), pct(few["coverage_over_runs"]["mean"]), pct(few["worst_day_over_runs"])
+        )
+    assert_quoted(
+        page,
+        f"{pct(few['coverage_over_runs']['min'])} to {pct(few['coverage_over_runs']['max'])}",
+        f"{few['coverage_over_runs']['n']} runs",
     )
     seeds = d["multiday"]["seed_spread_adapt_temp_aps"]["by_alpha"]["0.1"]["coverage"]
     assert_quoted(page, f"{pct(seeds['min'])} to {pct(seeds['max'])}")

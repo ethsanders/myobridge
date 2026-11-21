@@ -71,6 +71,13 @@ or `--duration`. The last line gives the final score.
 
 ## What the number means
 
+Three sessions give a looser promise than the benchmark's thirty days. Run
+the same way on 28 different stretches of three days and checked on months
+of later days, 90% sets delivered 88.5% on average, and single days went as
+low as 78.0% ([details](conformal.md#against-simpler-rules)). The
+benchmark's tighter numbers set the temperature and the threshold on ten
+days each.
+
 The promise is about windows like the scored ones: on a later day, after the
 one-second-per-gesture recalibration, holding a gesture you trained. A few
 hundred windows give a rough number. Each window sits next to many others

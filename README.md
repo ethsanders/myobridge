@@ -5,15 +5,16 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/ethsanders/myobridge/blob/main/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/ethsanders/myobridge/blob/main/LICENSE)
 
-**It tells you when it doesn't know, and that promise holds across 91 days.**
+**A gesture decoder that says how sure it is, and stays honest about it from one day to the next.**
 
 myobridge turns the electrical activity of forearm muscles (EMG) into hand
-gestures, live. Instead of one guess for every 50 ms of signal, it can answer
-with a set of gestures that holds the right one 90% of the time: one gesture
-when it's sure, two or three when it's torn. On one person recorded over
-months, with the electrodes taken off and put back on every day, that
-promise delivers 89.1% [88.7, 89.4] on 91 later days. Set the textbook way
-on the original decoder, it delivers 74.6%.
+gestures, live. Each decision can come as a set of gestures that should hold
+the right one at a rate you pick: one gesture when it's sure, two or three
+when it's torn. On one person recorded over months, with the electrodes
+taken off and put back on every day, sets promised at 90% delivered between
+85.2% and 93.7% on each of 91 later days, 89.1% [88.7, 89.4] overall. The
+plain decoder is right as often on average (89.0%), but on its worst day only
+75.7% of the time. On days like that the sets get bigger instead.
 
 ![One recorded day: the decoder's sets, then the textbook recipe making confident mistakes, then an electrode coming off with and without the quality monitor](https://raw.githubusercontent.com/ethsanders/myobridge/main/docs/figures/sets.gif)
 
@@ -98,11 +99,17 @@ What stands out:
 - **New people need their own calibration.** Starting from 21 other
   people's model adds 1.5 points [0.0, 3.0] over using the new
   person's 2 seconds per gesture alone.
-- **It can say when it isn't sure.** Instead of one gesture it can give a
-  set that should hold the right one 90% of the time. Across 91 later days
-  the sets deliver 89.1% [88.7, 89.4], and when a set has a single gesture
-  it is right 97.0% of the time. I haven't found this done for EMG before;
-  [how it works](https://ethsanders.github.io/myobridge/conformal/).
+- **The sets keep their promise on every day, not just on average.**
+  At 90%, all 91 test days land within 5 points of the promise, against
+  85.7% of days for the plain decoder. A fixed number of guesses can't do
+  that: the best fixed number for 90% is one, which is the plain decoder,
+  and for 95% it is three every time (94.8%), where the sets average 1.95
+  gestures (93.9%). If all you want is to act only when sure, plain
+  confidence does as well or better: at the same share of answers, the top
+  probability is right 97.9% of the time against 97.0% for one-gesture sets.
+  What the sets add is the promise, and a frozen confidence cut-off breaks
+  it: aimed at 95% accuracy, it ranges down to 78.5% on single days.
+  [The comparisons](https://ethsanders.github.io/myobridge/conformal/#against-simpler-rules).
 - **A loose electrode is easy to catch.** The monitor notices within about
   a second and switches to a model without that electrode, computed
   instantly from the full one.

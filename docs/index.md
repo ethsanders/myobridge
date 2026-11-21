@@ -1,9 +1,11 @@
 # myobridge
 
-**It tells you when it doesn't know, and that promise holds across 91 days.**
-A decoded gesture comes with a set that holds the right one 90% of the time,
-and on one person over months, with the electrodes put back on every day, it
-delivers 89.1% ([how](conformal.md)).
+**A gesture decoder that says how sure it is, and stays honest about it from one day to the next.**
+Each decision can come as a set of gestures that should hold the right one
+90% of the time. On one person over months, with the electrodes put back on
+every day, the sets delivered 89.1% overall and at least 85.2% on every one
+of 91 later days, where the plain decoder dropped to 75.7% on its worst
+([how](conformal.md)).
 
 ![One recorded day: the decoder's sets, the textbook recipe, and an electrode coming off](figures/sets.gif)
 
