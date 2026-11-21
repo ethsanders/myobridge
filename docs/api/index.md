@@ -24,6 +24,7 @@ The pages in this section are generated from the docstrings in
 | [Streaming and replay](streaming.md) | `protocol`, `receiver`, `simulator`, `replay` | The UDP packet format, the receiver, the fake armband, replays |
 | [Datasets and evaluation](evaluation.md) | `datasets`, `evaluation` | Pinned dataset loaders and leak-free scoring |
 | [Firmware models](firmware.md) | `decimator`, `aliasing` | Python references for the firmware's decimation filter, and the aliasing model |
+| [Hardware report](report.md) | `report` | Evidence from your own sessions: noise floor, hum, faults, decoding and the link |
 
 The `myobridge` command is documented by `myobridge --help` and
 [Getting started](../getting-started.md).

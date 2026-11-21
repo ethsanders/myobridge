@@ -8,6 +8,20 @@ All notable changes to myobridge. The format follows
 
 ### Added
 
+- `myobridge report`: sessions from the armband in, a hardware report out
+  (report.md, report.json and figures). Raw traces, the rest noise floor
+  in counts, millivolts at the ADC and, with `--gain`, microvolts at the
+  electrodes, mains hum, clipping, what the quality monitor flagged
+  (including a deliberately lifted electrode and a mains lead near the
+  cables), spectra, RMS per gesture, time-blocked and across-session
+  accuracy with and without `adapt()`, and link quality. In code:
+  `myobridge.report`. Guide: "The first recorded session".
+- Link stats are kept: `calibrate --session` saves the receiver's packet
+  loss, gaps, CRC errors and jitter in the session (`Session.link`), and
+  `record` saves them in its .npz. Older files still load.
+  `Receiver.link_summary()`, `Receiver.arrivals` (`ArrivalLog`),
+  `Receiver.invalid`, and `LinkStats.gaps` and `longest_gap`.
+- `sessions.adapt_to()`: the decoder half of `recalibrate()`.
 - The recipe on your own armband. `myobridge calibrate --session day1.npz`
   keeps the raw recordings. `myobridge fit day1.npz day2.npz day3.npz` trains
   on the early sessions and fits the temperature and threshold on the later

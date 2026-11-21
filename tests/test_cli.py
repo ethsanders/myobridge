@@ -258,6 +258,8 @@ def test_record_saves_samples_and_reports_noise(tmp_path, receivers, capsys):
     saved = np.load(out)
     assert saved["samples"].shape == (1000, 4) and saved["samples"].dtype == np.int16
     assert int(saved["fs"]) == 1000
+    link = json.loads(str(saved["link"]))
+    assert link["received"] > 0 and link["timing"]["packets_timed"] > 0
     text = capsys.readouterr().out
     assert text.count("20-450 Hz RMS") == 4
 
@@ -436,3 +438,79 @@ def test_session_errors(argv, message, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     status, err = run_failing(argv, capsys)
     assert status == 1 and message in err
+
+
+def test_live_calibrate_keeps_link_stats_in_the_session(tmp_path, receivers, monkeypatch):
+    monkeypatch.setattr(cli, "MIN_HOLD_S", 0.5)  # short holds, to keep the test quick
+    monkeypatch.setattr("builtins.input", lambda prompt: "")
+    path = tmp_path / "live.npz"
+    argv = ["calibrate", "--port", "0", "--gestures", "rest,fist", "--seconds", "1"]
+    cmd = Background([*argv, "--out", str(tmp_path / "m.npz"), "--session", str(path)])
+    port = receivers.next().port
+    sender = threading.Thread(
+        target=run_udp,
+        args=("127.0.0.1", port, EmgSimulator(seed=4)),
+        kwargs={"duration_s": 4.0, "verbose": False, "drop_prob": 0.05},
+        daemon=True,
+    )
+    sender.start()
+    cmd.join()
+    sender.join(timeout=10)
+    link = myobridge.Session.load(path).link
+    assert link is not None and link["received"] > 50
+    assert link["dropped"] > 0 and link["gaps"] > 0 and link["invalid_by_kind"] == {}
+    assert link["timing"]["packets_timed"] > 50 and "extra_delay_ms" in link["timing"]
+
+
+def test_report_from_simulator_sessions(tmp_path, capsys):
+    """calibrate --sim --session on two days, then the report, with and without figures."""
+    days = []
+    for i in range(2):
+        days.append(str(tmp_path / f"day{i}.npz"))
+        main(
+            [
+                "calibrate",
+                "--sim",
+                "--seed",
+                str(i),
+                "--gestures",
+                "rest,fist,open",
+                "--seconds",
+                "3",
+                "--out",
+                str(tmp_path / f"m{i}.npz"),
+                "--session",
+                days[-1],
+            ]
+        )
+    capsys.readouterr()
+    out = tmp_path / "report"
+    main(
+        ["report", *days, "--out", str(out), "--gain", "1000", "--model", str(tmp_path / "m0.npz")]
+    )
+    text = capsys.readouterr().out
+    assert "and 4 figures" in text and "Rest noise floor" in text and "after `adapt()`" in text
+    result = json.loads((out / "report.json").read_text())
+    assert result["signal_chain"]["gain"] == 1000
+    assert result["link"] == [] and "model" in result
+    assert (out / "traces.png").exists() and (out / "report.md").exists()
+
+    bare = tmp_path / "bare"
+    main(["report", days[0], "--out", str(bare), "--no-figures", "--adc-full-scale", "3.1"])
+    assert not list(bare.glob("*.png"))
+    assert json.loads((bare / "report.json").read_text())["signal_chain"]["adc_full_scale_v"] == 3.1
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["report", "missing.npz"], "no such file: missing.npz"),
+        (["report", "rec.npz"], "at least one session"),
+        (["report", "rec.npz", "--gain", "0"], "must be > 0"),
+    ],
+)
+def test_report_errors(argv, message, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    np.savez(tmp_path / "rec.npz", samples=np.zeros((100, 4), np.int16), fs=1000)
+    status, err = run_failing(argv, capsys)
+    assert status in (1, 2) and message in err.splitlines()[-1]

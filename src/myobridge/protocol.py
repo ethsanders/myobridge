@@ -160,6 +160,8 @@ class LinkStats:
     reordered: int = 0  # arrived late and were discarded
     restarts: int = 0  # device rebooted (seq or its clock jumped backwards)
     duplicates: int = 0  # second copies of a packet, discarded
+    gaps: int = 0  # separate runs of missing packets (a late packet may fill one later)
+    longest_gap: int = 0  # most packets missing in one run
 
     @property
     def loss_percent(self) -> float:
@@ -204,6 +206,9 @@ class SequenceTracker:
                 return True
             # On time (ahead == 0) or after a gap: everything in between was lost.
             self.stats.dropped += ahead
+            if ahead:
+                self.stats.gaps += 1
+                self.stats.longest_gap = max(self.stats.longest_gap, ahead)
             self.stats.received += 1
             self._covered += ahead + 1
             self._advance(seq, timestamp_us)

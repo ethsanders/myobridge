@@ -133,6 +133,8 @@ MultiDay results predict a drop of a few points after one day and much more
 after weeks; a short recalibration should bring it back. This is the
 experiment that turns the public-data results into a result on my own
 hardware.
+[The first recorded session](first-session.md) is the full protocol for
+these days, and `myobridge report` turns them into a report.
 
 ## Results log
 
