@@ -110,6 +110,13 @@ What stands out:
   What the sets add is the promise, and a frozen confidence cut-off breaks
   it: aimed at 95% accuracy, it ranges down to 78.5% on single days.
   [The comparisons](https://ethsanders.github.io/myobridge/conformal/#against-simpler-rules).
+- **Acting only when confident nearly halves the wrong actions.** A gate
+  that acts when the top probability is at least 0.7, and otherwise keeps
+  doing the last thing, makes 14.0 wrong actions a minute on MultiDay's
+  later days, against 25.6 for the usual 5-window vote, with no measurable
+  delay. Chosen the same way on 3DC the gain is smaller, from 12.4 to 10.0
+  after a break.
+  [Acting on it](https://ethsanders.github.io/myobridge/decisions/).
 - **A loose electrode is easy to catch.** The monitor notices within about
   a second and switches to a model without that electrode, computed
   instantly from the full one.

@@ -433,6 +433,14 @@ def test_decisions() -> None:
         _signed_ci(w[ev]["minus_baseline"][wpm]),
         _signed_ci(w["confidence_k1_cutoff0.7_latch"]["minus_baseline"][wpm]),
     )
+    ev_w = within["settings"][ev]["report"][wpm]
+    assert_quoted(
+        _text(README),
+        _rate(base["report"][wpm]),
+        _rate(gate["report"][wpm]),
+        _rate(w["vote_k5"]["report"][wpm]),
+        _rate(ev_w),
+    )
     cross = d["threedc"]["cross_person"]
     ev = cross["chosen"]["matched@vote_k5"]["evidence_latch"]
     assert_quoted(
