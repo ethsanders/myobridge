@@ -111,7 +111,9 @@ but at 97% it delivers 96.0%, and the interval does not reach 97%. On days
 21-30 the same cut-off answered 86.2% of windows and was 97.4% right. Later
 days are harder, and no held-out rule can see that coming. Bonferroni, the
 most cautious, comes closest: 96.8% at 97%, at the cost of answering 5.3
-points less often. It still meets 97% on only 58.2% of days.
+points less often. It still meets 97% on only 58.2% of days. At 95% it
+delivers 95.0% on average (94.99% before rounding, so just short), and
+meets the target on 65.9% of days.
 
 **Recalibrating each day matters most.** Without `adapt()`, the model is
 right 73.5% of the time on the test days rather than 89.0%. With the same

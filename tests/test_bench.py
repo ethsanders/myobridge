@@ -200,7 +200,13 @@ def test_conformal_quick(data, tmp_path):
         assert len(r["coverage_by_gesture"]) == 11
         assert sum(b["n_windows"] for b in r["by_time_into_hold"].values()) > 0
     base = row["0.1"]["baselines"]
-    assert set(base) == {"top1", "fixed_top_k", "max_prob_rejection", "margin_rejection"}
+    # the nested rule is added when the calibration windows allow it
+    assert set(base) - {"max_prob_rejection_nested"} == {
+        "top1",
+        "fixed_top_k",
+        "max_prob_rejection",
+        "margin_rejection",
+    }
     assert base["max_prob_rejection"]["named_one_share"] == pytest.approx(
         row["0.1"]["pooled_singleton_rate"], abs=1e-3
     )

@@ -11,17 +11,19 @@
   `tests/test_bench.py`, `tests/test_public_api.py`.
 - API docs entry, mkdocs nav entry, CHANGELOG entry.
 - Full run done; results in `results/selective.json`.
+- Guide `docs/selective.md`, with its numbers checked by `tests/test_docs.py`.
 - `classifier.py`: docstring reflow only, to fix an existing ruff E501.
+- `test_conformal_quick` already failed at 9512cee: it did not allow the
+  `max_prob_rejection_nested` key that `conformal_bench.py` writes. The test
+  now allows it; `conformal_bench.py` is unchanged.
 
 ## Left
 
-- Write `docs/selective.md` (the nav already points to it, so
-  `mkdocs build --strict` fails until it exists), and add a docs-number
-  test to `tests/test_docs.py`.
-- Run ruff, ruff format --check, mypy, the full pytest and
-  mkdocs --strict. Rerun `test_selective_quick`, which has not run since the
-  last `_rule_for` change.
-- Final commit and report.
+- Nothing in the brief. `docs/selective.md` and `test_selective` in
+  `tests/test_docs.py` are written. ruff, ruff format --check, mypy and
+  mkdocs --strict pass. The full pytest passes (377 passed, 1 skipped,
+  about 15 min); `test_selective_quick` takes 87 s.
+- Delete this file before merging.
 
 ## Validation-only numbers (MultiDay days 11-30)
 
