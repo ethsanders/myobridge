@@ -200,7 +200,22 @@ def test_conformal_quick(data, tmp_path):
         assert len(r["coverage_by_gesture"]) == 11
         assert sum(b["n_windows"] for b in r["by_time_into_hold"].values()) > 0
     base = row["0.1"]["baselines"]
-    assert set(base) == {"top1", "fixed_top_k", "max_prob_rejection", "margin_rejection"}
+    assert set(base) == {
+        "top1",
+        "fixed_top_k",
+        "max_prob_rejection",
+        "margin_rejection",
+        "max_prob_rejection_nested",
+    }
+    # the frozen confidence rule, with and without recalibration and temperature
+    assert set(out["multiday"]["confidence_rejection"]) == {
+        "static_no_temperature",
+        "static_temperature",
+        "adapt_no_temperature",
+        "adapt_temperature",
+    }
+    for rule in out["multiday"]["confidence_rejection"].values():
+        assert set(rule) == {"temperature", "0.95", "0.97"}
     assert base["max_prob_rejection"]["named_one_share"] == pytest.approx(
         row["0.1"]["pooled_singleton_rate"], abs=1e-3
     )
@@ -248,6 +263,20 @@ def test_conformal_baselines_by_hand():
     assert out["fixed_top_k"]["k"]["mean"] == 2
     # the two most confident windows (0.7 and 0.6) are both right
     assert out["max_prob_rejection"] == {"named_one_share": 0.5, "accuracy_when_named": 1.0}
+    assert "max_prob_rejection_nested" not in out  # needs the calibration share
+    nested = cb._baselines({"a": g}, [g], 0.25, 1.0, 0.5, cal_share=0.5)
+    assert nested["max_prob_rejection_nested"]["named_one_share"] == 0.5
+
+
+def test_confidence_cutoff_keeps_ties_together():
+    from myobridge.bench import conformal_bench as cb
+
+    # four windows at exactly the same confidence, half right, then one more
+    # that is right: accepting the four gives 50%, accepting all five 60%
+    p = np.array([[0.9, 0.1], [0.9, 0.1], [0.9, 0.1], [0.9, 0.1], [0.6, 0.4]])
+    g = cb.Scored(np.log(p), np.array([0, 0, 1, 1, 0]))
+    assert cb._confidence_cutoff([g], 1.0, 0.6) == pytest.approx(0.6)  # the loosest that works
+    assert cb._confidence_cutoff([g], 1.0, 0.65) == np.inf  # nothing reaches 65%: never answer
 
 
 def test_partial_calibration_quick(data, tmp_path):
