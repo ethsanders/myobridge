@@ -11,12 +11,79 @@ import socket
 import sys
 import time
 from collections.abc import Iterator
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 import numpy as np
 
 from .protocol import LinkStats, Packet, ProtocolError, SequenceTracker, decode_packet
 
 MAX_DATAGRAM = 65535
+
+
+@dataclass
+class ArrivalLog:
+    """When each packet reached this computer, next to when the device sampled it.
+
+    `Receiver.receive` adds every usable packet it reads while
+    `Receiver.arrivals` is set; `Receiver.drain` doesn't, because packets
+    that waited in the socket buffer come out in a burst that says nothing
+    about the link. The two clocks aren't synchronised, so this measures how
+    much the delay *varies* (jitter), not the delay itself.
+    """
+
+    max_packets: int = 1_000_000  # about 5.5 hours at 50 packets/s
+    host_s: list[float] = field(default_factory=list)  # time.monotonic() on arrival
+    device_us: list[int] = field(default_factory=list)  # the packet's timestamp_us
+    duration_us: list[int] = field(default_factory=list)  # n_frames / sample_rate
+
+    def add(self, host_s: float, packet: Packet) -> None:
+        """Log one packet (ignored once `max_packets` are logged)."""
+        if len(self.host_s) < self.max_packets:
+            self.host_s.append(host_s)
+            self.device_us.append(packet.timestamp_us)
+            self.duration_us.append(packet.n_frames * 1_000_000 // packet.sample_rate)
+
+    def summary(self) -> dict[str, Any]:
+        """Jitter in milliseconds; only `packets_timed` with fewer than 10 packets.
+
+        - `interval_error_ms`: arrival gap minus sampling gap, for packets that
+          follow each other on the device with none missing in between.
+        - `extra_delay_ms`: each packet's delay beyond the quickest packet's,
+          after taking out the slow drift between the two clocks.
+        """
+        n = len(self.host_s)
+        out: dict[str, Any] = {"packets_timed": n}
+        if n < 10:
+            return out
+        host = np.asarray(self.host_s, dtype=np.float64)
+        dev = np.asarray(self.device_us, dtype=np.float64) / 1e6
+        step = np.asarray(self.duration_us[:-1], dtype=np.float64) / 1e6
+        adjacent = np.isclose(np.diff(dev), step, rtol=0.0, atol=2e-4)
+        err_ms = (np.diff(host) - np.diff(dev))[adjacent] * 1e3
+        if len(err_ms):
+            out["interval_error_ms"] = {
+                "std": float(np.std(err_ms)),
+                "p95_abs": float(np.percentile(np.abs(err_ms), 95)),
+                "max_abs": float(np.max(np.abs(err_ms))),
+                "pairs": len(err_ms),
+            }
+        # The delay is a floor (the quickest a packet can arrive) plus waiting.
+        # The floor drifts with the two clocks, so fit a line through the
+        # quickest packet of each of a few stretches of the recording.
+        t, delay = dev - dev[0], host - dev
+        quickest = [i[np.argmin(delay[i])] for i in np.array_split(np.arange(n), min(20, n // 5))]
+        slope, offset = np.polyfit(t[quickest], delay[quickest], 1)
+        extra = (delay - (offset + slope * t)) * 1e3
+        extra -= extra.min()
+        out["extra_delay_ms"] = {
+            "p50": float(np.percentile(extra, 50)),
+            "p95": float(np.percentile(extra, 95)),
+            "p99": float(np.percentile(extra, 99)),
+            "max": float(extra.max()),
+        }
+        out["clock_drift_ppm"] = float(slope * 1e6)
+        return out
 
 
 class Receiver:
@@ -44,6 +111,8 @@ class Receiver:
             raise
         self.tracker = SequenceTracker()
         self.last_error: str | None = None
+        self.invalid: dict[str, int] = {}  # invalid datagrams by ProtocolError.kind
+        self.arrivals: ArrivalLog | None = None  # set one to time packets (jitter)
 
     @property
     def stats(self) -> LinkStats:
@@ -60,6 +129,7 @@ class Receiver:
             packet = decode_packet(data)
         except ProtocolError as err:
             self.stats.corrupt += 1
+            self.invalid[err.kind] = self.invalid.get(err.kind, 0) + 1
             self.last_error = f"{err.kind}: {err}"
             return None
         return packet if self.tracker.accept(packet.seq, packet.timestamp_us) else None
@@ -70,7 +140,22 @@ class Receiver:
             data, _addr = self.sock.recvfrom(MAX_DATAGRAM)
         except TimeoutError:  # socket.timeout is an alias of this since 3.10
             return None
-        return self.handle_datagram(data)
+        arrived = time.monotonic()
+        packet = self.handle_datagram(data)
+        if packet is not None and self.arrivals is not None:
+            self.arrivals.add(arrived, packet)
+        return packet
+
+    def link_summary(self) -> dict[str, Any]:
+        """The link stats so far as plain JSON: the counts, the loss, invalid
+        datagrams by kind (`crc`, `truncated`, ...) and, while `arrivals` is
+        set, the jitter (`ArrivalLog.summary`)."""
+        out: dict[str, Any] = asdict(self.stats)
+        out["loss_percent"] = self.stats.loss_percent
+        out["invalid_by_kind"] = dict(sorted(self.invalid.items()))
+        if self.arrivals is not None:
+            out["timing"] = self.arrivals.summary()
+        return out
 
     def __iter__(self) -> Iterator[Packet | None]:
         """Yield packets forever; yields None on timeouts so callers can do housekeeping."""

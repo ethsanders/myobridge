@@ -140,6 +140,8 @@ an hour); a test checks that the numbers in the docs match the output.
   tested, but every accuracy above comes from public datasets recorded with
   other hardware. [Bring-up](https://ethsanders.github.io/myobridge/hardware-bringup/)
   is next.
+  [The first recorded session](https://ethsanders.github.io/myobridge/first-session/)
+  is the protocol, and `myobridge report` turns it into evidence.
 - **Drift is measured on one person**, because MultiDay is the best public
   record of day-to-day change I found.
 - **Faults are simulated** on clean recordings, not recorded from real

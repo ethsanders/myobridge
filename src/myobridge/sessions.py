@@ -59,6 +59,9 @@ class Session:
     mains_hz: float = 60.0
     recorded_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     source: str = ""  # the file it was loaded from, if any
+    # Link stats from the receiver while recording (`Receiver.link_summary`);
+    # None for the simulator and for sessions saved before they were kept.
+    link: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if len(self.labels) != len(self.holds) or not self.holds:
@@ -87,13 +90,15 @@ class Session:
             "mains_hz": self.mains_hz,
             "recorded_at": self.recorded_at,
         }
+        if self.link is not None:
+            meta["link"] = self.link
         arrays = {f"hold_{i}": h for i, h in enumerate(self.holds)}
         np.savez(path, meta=np.array(json.dumps(meta)), **arrays)  # type: ignore[arg-type]
         return path
 
     @classmethod
     def load(cls, path: str | Path) -> Session:
-        """Read a session written by `save`."""
+        """Read a session written by `save` (by any version; older ones have no link stats)."""
         path = Path(path)
         with np.load(path, allow_pickle=False) as data:
             if "meta" not in data:
@@ -107,6 +112,7 @@ class Session:
             float(meta["mains_hz"]),
             meta["recorded_at"],
             str(path),
+            meta.get("link"),
         )
 
 
@@ -172,14 +178,24 @@ def recalibrate(sets: ConformalGestures, today: Session) -> ConformalGestures:
     Uses the windows in `CALIBRATION_WINDOW` of each of today's holds (one
     second per gesture), so `today` can be short: 2 s per gesture is enough.
     """
-    base = sets.model
-    if not isinstance(base, LDAClassifier) or base.settings is None:
+    if not isinstance(sets.model, LDAClassifier):
         raise ValueError("recalibration needs a model saved by `fit_sets` or `calibrate`")
-    X, y = _rows(today, base.settings, base.feature_set or DEFAULT_FEATURE_SET, *CALIBRATION_WINDOW)
-    missing = set(np.asarray(base.classes).tolist()) - set(y.tolist())
+    return sets.with_model(adapt_to(sets.model, today))
+
+
+def adapt_to(model: LDAClassifier, today: Session) -> LDAClassifier:
+    """The decoder half of `recalibrate`: `adapt` with one second of each of today's holds."""
+    if model.settings is None:
+        raise ValueError("recalibration needs a model saved by `fit_sets` or `calibrate`")
+    X, y = _rows(
+        today, model.settings, model.feature_set or DEFAULT_FEATURE_SET, *CALIBRATION_WINDOW
+    )
+    known = np.isin(y, np.asarray(model.classes))  # holds the model doesn't know are left out
+    X, y = X[known], y[known]
+    missing = set(np.asarray(model.classes).tolist()) - set(y.tolist())
     if missing:
         raise ValueError(f"today's recording has no {', '.join(sorted(map(str, missing)))}")
-    return sets.with_model(adapt(base, X, y, MEAN_PRIOR, COVARIANCE_WEIGHT))
+    return adapt(model, X, y, MEAN_PRIOR, COVARIANCE_WEIGHT)
 
 
 @dataclass

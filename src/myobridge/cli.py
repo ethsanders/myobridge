@@ -21,7 +21,7 @@ from .lsl import LslOutlets
 from .pipeline import GesturePipeline
 from .protocol import Packet, SequenceTracker, decode_packet
 from .quality import QualityMonitor, QualityReport
-from .receiver import Receiver
+from .receiver import ArrivalLog, Receiver
 from .sessions import MIN_HOLD_S, Session
 from .simulator import GESTURES, EmgSimulator, gesture_session, packetize, run_udp
 
@@ -202,6 +202,7 @@ def cmd_record(args: argparse.Namespace) -> None:
     fs, total = None, 0
     print(f"Recording {args.seconds:g} s.", flush=True)
     with open_receiver(args.port) as rx:
+        rx.arrivals = ArrivalLog()
         for packet in live_packets(rx):
             if packet is None:
                 continue
@@ -211,9 +212,16 @@ def cmd_record(args: argparse.Namespace) -> None:
             if total >= args.seconds * fs:
                 break
         stats = rx.stats
+        link = rx.link_summary()
     assert fs is not None
     raw = np.vstack(blocks)[: int(args.seconds * fs)]
-    np.savez(args.out, samples=raw, fs=fs, dropped_packets=stats.dropped)
+    np.savez(
+        args.out,
+        samples=raw,
+        fs=fs,
+        dropped_packets=stats.dropped,
+        link=np.array(json.dumps(link)),
+    )
     print(f"Saved {len(raw)} samples x {raw.shape[1]} channels at {fs} Hz to {args.out}")
     print(f"packets dropped {stats.dropped} ({stats.loss_percent:.2f}%)")
     try:
@@ -230,6 +238,7 @@ def cmd_record(args: argparse.Namespace) -> None:
 def cmd_calibrate(args: argparse.Namespace) -> None:
     gestures: list[str] = args.gestures
     holds: list[np.ndarray] = []
+    link = None  # the receiver's link stats, kept in the session
     if args.session and args.seconds < MIN_HOLD_S:
         raise CliError(
             f"--session needs holds of {MIN_HOLD_S:g} s or more for `myobridge fit` "
@@ -246,15 +255,17 @@ def cmd_calibrate(args: argparse.Namespace) -> None:
         clf, X, y = calibrate(record, gestures, args.seconds, sim.fs, mains_hz=args.mains)
     else:
         with open_receiver(args.port) as rx:
+            rx.arrivals = ArrivalLog()
             clf, X, y = calibrate_live(rx, gestures, args, holds)
+            link = rx.link_summary()
     train_acc = np.mean(clf.predict(X) == y)
     clf.save(args.out)
     print(f"Trained on {len(y)} windows, training accuracy {train_acc:.1%}. Saved {args.out}")
     if args.session:
         assert clf.settings is not None
-        session = Session(clf.settings.fs, tuple(gestures), tuple(holds), args.mains)
+        session = Session(clf.settings.fs, tuple(gestures), tuple(holds), args.mains, link=link)
         path = session.save(args.session)
-        print(f"Saved the recordings to {path} (for `myobridge fit`)")
+        print(f"Saved the recordings to {path} (for `myobridge fit` and `myobridge report`)")
 
 
 def keep_holds(
@@ -574,6 +585,51 @@ def cmd_sets(args: argparse.Namespace) -> None:
                 f"over {score['windows']} windows; one gesture {pct(score['singleton_rate'], 0)}, "
                 f"right {pct(score['accuracy_when_singleton'], 0)} of those times"
             )
+
+
+# --------------------------------------------------------------------- report
+
+
+def cmd_report(args: argparse.Namespace) -> None:
+    """Sessions and recordings from the armband -> report.md, report.json, figures."""
+    from .report import (
+        JSON_NAME,
+        MARKDOWN_NAME,
+        SignalChain,
+        load_inputs,
+        readme_lines,
+        write_report,
+    )
+
+    try:
+        sessions, recordings = load_inputs(args.files)
+    except FileNotFoundError as err:
+        raise CliError(f"no such file: {err.filename}") from None
+    except (ValueError, KeyError) as err:
+        raise CliError(str(err)) from None
+    if not sessions:
+        raise CliError("give at least one session from `myobridge calibrate --session`")
+    if not args.no_figures:
+        try:
+            import matplotlib  # noqa: F401
+        except ImportError:
+            raise CliError(
+                'figures need matplotlib: pip install "myobridge[plot]", or use --no-figures'
+            ) from None
+    chain = SignalChain(gain=args.gain, adc_full_scale_v=args.adc_full_scale, rail=args.rail)
+    try:
+        result = write_report(
+            sessions, args.out, recordings, chain, args.model, figures=not args.no_figures
+        )
+    except FileNotFoundError as err:
+        raise CliError(f"no such file: {err.filename or err}") from None
+    except ValueError as err:
+        raise CliError(str(err)) from None
+    print(f"Wrote {args.out}/{MARKDOWN_NAME} and {args.out}/{JSON_NAME}", end="")
+    figures = result["figures"]
+    print(f" and {len(figures)} figures" if figures else "")
+    for line in readme_lines(result):
+        print("  " + line)
 
 
 # ----------------------------------------------------------------------- demo
@@ -960,6 +1016,36 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--duration", type=positive, help="stop after N seconds")
     s.add_argument("--sim", action="store_true", help="use the simulator instead of a device")
     s.add_argument("--seed", type=int, default=0, help="prompt order (and simulator) seed")
+
+    s = command(
+        "report",
+        "turn sessions from the armband into a hardware report (Markdown, JSON, figures)",
+        cmd_report,
+        uses_mains=False,
+    )
+    s.add_argument(
+        "files",
+        nargs="+",
+        metavar="FILE",
+        help="sessions from `calibrate --session`, oldest first, and any `record` files "
+        "(free use); the last session with gestures is the test day across days",
+    )
+    s.add_argument("--out", default="report", help="folder for report.md, report.json, figures")
+    s.add_argument("--model", help="also score this saved model (from calibrate or fit)")
+    s.add_argument(
+        "--gain",
+        type=positive,
+        help="the sensor's gain from the electrodes to RAW (V/V), from its datasheet; "
+        "without it the report gives counts and mV at the ADC, not µV at the skin",
+    )
+    s.add_argument(
+        "--adc-full-scale",
+        type=positive,
+        default=3.3,
+        help="volts at the ADC pin for counts 0-4095 (firmware: 11 dB attenuation)",
+    )
+    s.add_argument("--rail", type=positive, default=ESP32_RAIL, help="|sample| counted as clipped")
+    s.add_argument("--no-figures", action="store_true", help="skip the PNG figures")
 
     s = command(
         "demo", "offline end-to-end run: simulate, train, evaluate", cmd_demo, uses_mains=False
