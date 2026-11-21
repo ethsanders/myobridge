@@ -299,3 +299,75 @@ def test_demo_payload_matches_the_benchmark() -> None:
         assert abs(got - own["adapt-myobridge"]) < 0.025
     within = md["adapt_validation_days"]["0.1"]["share_within_5_points"]
     assert h["spread"]["adapt-textbook"]["within_5_points"] == pytest.approx(within, abs=1e-6)
+
+
+DECISIONS_MD = "docs/decisions.md"
+
+
+def _rate(m: dict[str, float]) -> str:
+    return f"{m['mean']:.1f}"
+
+
+def _rate_ci(m: dict[str, float]) -> str:
+    return f"{m['mean']:.1f} [{m['ci95_low']:.1f}, {m['ci95_high']:.1f}]"
+
+
+def _signed_ci(m: dict[str, float]) -> str:
+    def s(x: float) -> str:
+        return f"{x:+.1f}".replace("-", "\N{MINUS SIGN}")
+
+    lo, hi = s(m["ci95_low"]), s(m["ci95_high"])
+    lo = lo if m["ci95_low"] < 0 else lo.lstrip("+")
+    return f"{s(m['mean'])} [{lo}, {hi}]"
+
+
+def test_decisions() -> None:
+    d = _load("decision")
+    text = _text(DECISIONS_MD)
+    md = d["multiday"]
+    s = md["settings"]
+    base, gate = s["vote_k5"], s["confidence_k1_cutoff0.7_latch"]
+    # the headline row is what days 11-30 chose at the vote's own speed
+    assert md["chosen"]["matched@vote_k5"]["confidence_latch"] == "confidence_k1_cutoff0.7_latch"
+    assert gate["verdict"]["wins"]
+    wpm = "from_2.5s.wrong_per_min"
+    assert_quoted(
+        text,
+        _rate_ci(base["report"][wpm]),
+        _rate_ci(gate["report"][wpm]),
+        _signed_ci(gate["minus_baseline"][wpm]),
+        pct(base["report"]["from_2.5s.correct_share"]["mean"]),
+        pct(gate["report"]["from_2.5s.correct_share"]["mean"]),
+        _rate(gate["report"]["from_onset.wrong_per_min"]),
+        _rate(base["report"]["from_onset.wrong_per_min"]),
+    )
+    for name in ("evidence_memory0.5_threshold0.7_latch", "set_alpha0.2_n1_m1_latch", "vote_k9"):
+        assert_quoted(
+            text, _rate(s[name]["report"][wpm]), _signed_ci(s[name]["minus_baseline"][wpm])
+        )
+    release = s["confidence_k1_cutoff0.7"]["report"]
+    assert_quoted(text, pct(release["from_2.5s.acting_share"]["mean"]), _rate(release[wpm]))
+    # the curve: each matched choice's wrong actions per minute
+    for k in (3, 5, 7, 9, 11):
+        name = md["chosen"][f"matched@vote_k{k}"]["confidence_latch"]
+        assert_quoted(text, _rate(s[name]["report"][wpm]), _rate(s[f"vote_k{k}"]["report"][wpm]))
+    within = d["threedc"]["within_sitting"]
+    w = within["settings"]
+    ev = within["chosen"]["matched@vote_k5"]["evidence_latch"]
+    assert ev == "evidence_memory0.7_threshold0.5_latch"
+    assert_quoted(
+        text,
+        _rate_ci(w["vote_k5"]["report"][wpm]),
+        _signed_ci(w[ev]["minus_baseline"][wpm]),
+        _signed_ci(w["confidence_k1_cutoff0.7_latch"]["minus_baseline"][wpm]),
+    )
+    cross = d["threedc"]["cross_person"]
+    ev = cross["chosen"]["matched@vote_k5"]["evidence_latch"]
+    assert_quoted(
+        text,
+        _rate_ci(cross["settings"]["vote_k5"]["report"][wpm]),
+        _signed_ci(cross["settings"][ev]["minus_baseline"][wpm]),
+        f"{cross['streams']['temperature']:.1f}",
+        pct(cross["settings"]["confidence_k1_cutoff0.7_latch"]["report"]["never_correct"]["mean"]),
+    )
+    assert_quoted(text, f"{md['n_settings_tried']} settings")
