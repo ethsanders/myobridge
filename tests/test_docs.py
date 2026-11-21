@@ -194,6 +194,78 @@ def test_conformal() -> None:
     assert_quoted(page, f"{pct(seeds['min'])} to {pct(seeds['max'])}")
 
 
+SELECTIVE_MD = "docs/selective.md"
+
+
+def test_selective() -> None:
+    d = _load("selective")
+    page = " ".join(_text(SELECTIVE_MD).replace("**", "").split())
+    md = d["multiday"]
+    rows = md["rows"]
+    held = "fallback_held_out_grid"
+    for target in ("0.97", "0.95"):
+        cell = rows["adapt_temperature"]["max_prob"][target]
+        for rule in ("naive_exact", held, "bonferroni"):
+            r = cell[rule]
+            assert_quoted(
+                page,
+                f"{pct(r['accuracy_when_answering']['mean'])} {ci(r['accuracy_when_answering'])}"
+                f" | {pct(r['answer_rate']['mean'])} | {pct(r['share_meeting_target'])}"
+                f" | {pct(r['share_within_2_points'])} | {pct(r['worst_group'])} |",
+            )
+        # the chosen procedure picks the same cut-offs as the default one
+        chosen = cell[md["method"]]
+        assert chosen["accuracy_when_answering"] == cell[held]["accuracy_when_answering"]
+    top = rows["adapt_temperature"]["max_prob"]["0.97"][held]
+    assert_quoted(page, pct(top["calibration_answer_rate"]), pct(top["calibration_accuracy"]))
+    static = rows["static_temperature"]["max_prob"]["0.97"]
+    a = static[held]["accuracy_when_answering"]
+    assert_quoted(
+        page,
+        f"{pct(a['mean'])} {ci(a)}",
+        pct(static[held]["answer_rate"]["mean"]),
+        pct(static["naive_exact"]["accuracy_when_answering"]["mean"]),
+        pct(static["naive_exact"]["answer_rate"]["mean"]),
+        pct(md["accuracy"]["static"]),
+        pct(md["accuracy"]["adapt"]),
+    )
+    fixed = rows["adapt_no_temperature"]["max_prob"]["0.97"]["fixed_sequence"]
+    assert_quoted(
+        page,
+        f"{pct(fixed['accuracy_when_answering']['mean'])} {ci(fixed['accuracy_when_answering'])}",
+        pct(fixed["answer_rate"]["mean"]),
+    )
+    assert (
+        rows["adapt_temperature"]["max_prob"]["0.97"]["fixed_sequence"]["answer_rate"]["mean"] == 0
+    )
+    scores = md["scores_on_test_days"]
+    assert (
+        scores["0.97"]["highest_answer_rate"] == scores["0.95"]["highest_answer_rate"] == "max_prob"
+    )
+    for name in ("margin", "aps_singleton"):
+        assert_quoted(
+            page, pct(scores["0.97"][name]["answer_rate"]), pct(scores["0.95"][name]["answer_rate"])
+        )
+    within = d["threedc"]["within_sitting"]
+    w = within["rows"]["temperature"]["max_prob"]["0.97"][within["method"]]
+    assert_quoted(
+        page,
+        f"{pct(w['accuracy_when_answering']['mean'])} {ci(w['accuracy_when_answering'])}",
+        pct(w["answer_rate"]["mean"]),
+        pct(within["accuracy"]),
+    )
+    cross = d["threedc"]["cross_person"]["adapt"]
+    c = cross["rows"]["temperature"]["max_prob"]
+    for target in ("0.95", "0.97"):
+        r = c[target][cross["method"]]
+        assert_quoted(
+            page,
+            f"{pct(r['accuracy_when_answering']['mean'])} {ci(r['accuracy_when_answering'])}",
+            pct(r["answer_rate"]["mean"]),
+        )
+    assert_quoted(page, pct(cross["accuracy"]))
+
+
 def test_partial_calibration() -> None:
     d = _load("partial_calibration")
     one = d["by_calibration_seconds"]["1.0"]
