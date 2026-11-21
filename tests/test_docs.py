@@ -148,7 +148,6 @@ def test_conformal() -> None:
     textbook = md["static_validation_days"]["0.1"]
     for doc in (README, RESULTS_MD, CONFORMAL_MD):
         assert_quoted(_text(doc), pct(head["coverage"]["mean"]), ci(head["coverage"]))
-    assert_quoted(_text(README), pct(head["accuracy_when_singleton"]))
     for doc in (README, CONFORMAL_MD, "docs/index.md"):
         assert_quoted(_text(doc), pct(head["coverage"]["min"]))
     assert_quoted(_text("docs/index.md"), pct(head["coverage"]["mean"]))
@@ -195,10 +194,8 @@ def test_conformal() -> None:
     base90 = head["baselines"]
     base95 = md["adapt_temp_aps"]["0.05"]["baselines"]
     top1 = base90["top1"]["coverage"]
-    for doc in (README, CONFORMAL_MD):
-        assert_quoted(
-            _text(doc), pct(top1["min"]), pct(base90["max_prob_rejection"]["accuracy_when_named"])
-        )
+    assert_quoted(_text(README), pct(top1["min"]))
+    assert_quoted(page, pct(top1["min"]), pct(base90["max_prob_rejection"]["accuracy_when_named"]))
     assert_quoted(_text(README), pct(top1["mean"]), pct(base90["top1"]["share_within_5_points"]))
     assert base90["fixed_top_k"]["k"]["mean"] == 1 and base95["fixed_top_k"]["k"]["mean"] == 3
     assert_quoted(_text(README), pct(base95["fixed_top_k"]["coverage"]["mean"]))
@@ -214,8 +211,7 @@ def test_conformal() -> None:
         pct(nested["accuracy_when_named"]),
     )
     frozen = d["multiday"]["confidence_rejection"]["adapt_temperature"]["0.95"]
-    for doc in (README, CONFORMAL_MD):
-        assert_quoted(_text(doc), pct(frozen["accuracy_when_answering"]["min"]))
+    assert_quoted(page, pct(frozen["accuracy_when_answering"]["min"]))
     assert_quoted(page, pct(frozen["accuracy_when_answering"]["mean"]))
     chosen = d["multiday"]["selection_check"]["rows"]
     assert chosen["adapt_temp_aps"]["0.1"]["share_within_5_points"] == 1.0

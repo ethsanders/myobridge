@@ -101,14 +101,10 @@ What stands out:
   person's 2 seconds per gesture alone.
 - **The sets keep their promise on every day, not just on average.**
   At 90%, all 91 test days land within 5 points of the promise, against
-  85.7% of days for the plain decoder. A fixed number of guesses can't do
-  that: the best fixed number for 90% is one, which is the plain decoder,
-  and for 95% it is three every time (94.8%), where the sets average 1.95
-  gestures (93.9%). If all you want is to act only when sure, plain
-  confidence does as well or better: at the same share of answers, the top
-  probability is right 97.9% of the time against 97.0% for one-gesture sets.
-  What the sets add is the promise, and a frozen confidence cut-off breaks
-  it: aimed at 95% accuracy, it ranges down to 78.5% on single days.
+  85.7% of days for the plain decoder. A fixed number of guesses can't
+  match that: at 95% it takes three every time (94.8%), where the sets
+  average 1.95 gestures (93.9%). For acting only when sure, plain
+  confidence does as well or better, so the gate below uses it.
   [The comparisons](https://ethsanders.github.io/myobridge/conformal/#against-simpler-rules).
 - **Acting only when confident nearly halves the wrong actions.** A gate
   that acts when the top probability is at least 0.7, and otherwise keeps
