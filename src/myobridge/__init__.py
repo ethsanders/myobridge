@@ -37,6 +37,7 @@ from .protocol import Packet, decode_packet, encode_packet
 from .quality import Issue, QualityConfig, QualityMonitor, QualityReport
 from .receiver import Receiver
 from .replay import Replay
+from .selective import SelectiveGestures
 from .sessions import Session, fit_sets, recalibrate
 from .simulator import EmgSimulator
 
@@ -64,6 +65,7 @@ __all__ = [
     "QualityReport",
     "Receiver",
     "Replay",
+    "SelectiveGestures",
     "Session",
     "SetGate",
     "TrainingSettings",

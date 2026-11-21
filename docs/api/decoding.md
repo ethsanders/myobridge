@@ -7,6 +7,7 @@
 ::: myobridge.conformal
 
 ::: myobridge.gating
+::: myobridge.selective
 
 ::: myobridge.sessions
 

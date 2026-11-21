@@ -35,6 +35,16 @@ All notable changes to myobridge. The format follows
   latch=True)` makes 14.0 wrong actions per minute against 25.6 for the
   5-window vote, at the same speed. On 3DC the gain is smaller. Guide:
   "Acting on it".
+- `myobridge.selective`: answer only when sure, with an accuracy promise
+  ("when it names a gesture, it's right 97% of the time").
+  `SelectiveGestures.calibrate()` picks a confidence cut-off with Learn then
+  Test, so the promise holds with probability 1 - delta on data like the
+  held-out windows; `predict()` returns the gesture or None. Scores: top
+  probability, top-two margin, or a one-gesture APS set. `grid_from()`
+  builds the cut-offs to test from other held-out windows.
+- `myobridge bench selective`: whether that promise holds on 91 later days
+  (MultiDay), after a break and on new people (3DC), against the naive
+  cut-off. Guide: "Acting only when sure".
 - The recipe on your own armband. `myobridge calibrate --session day1.npz`
   keeps the raw recordings. `myobridge fit day1.npz day2.npz day3.npz` trains
   on the early sessions and fits the temperature and threshold on the later

@@ -279,6 +279,56 @@ def test_confidence_cutoff_keeps_ties_together():
     assert cb._confidence_cutoff([g], 1.0, 0.65) == np.inf  # nothing reaches 65%: never answer
 
 
+def test_selective_quick(data, tmp_path):
+    from myobridge.bench import selective_bench as sb
+    from myobridge.selective import METHODS, SCORES
+
+    out = bench.EXPERIMENTS["selective"](opts(data, tmp_path))
+    md = out["multiday"]
+    test_days = multiday_bench.TEST_DAYS[:6]
+    assert md["test_days"] == test_days
+    # temperature and cut-off days are disjoint and both before the test days
+    t_days, c_days = md["temperature_days"], md["cutoff_days"]
+    assert t_days and c_days and not set(t_days) & set(c_days)
+    assert max(t_days + c_days) < min(test_days)
+    assert set(md["rows"]) == {
+        "static_no_temperature",
+        "static_temperature",
+        "adapt_no_temperature",
+        "adapt_temperature",
+    }
+    assert md["method"] in sb.LTT_RULES
+    # validation days 11-13: temperature on 11, cut-off on 12, compared on 13
+    sel = md["selection_check"]
+    assert [sel["temperature_days"], sel["cutoff_days"], sel["comparison_days"]] == [
+        [11],
+        [12],
+        [13],
+    ]
+    row = md["rows"]["adapt_temperature"]
+    held_out = {m + sb.HELD_OUT for m in ("fixed_sequence", "fallback")}
+    for score in SCORES:
+        for target in sb.TARGETS:
+            rules = row[score][str(target)]
+            extra = set(held_out) if score in sb.GRID_SCORES else set()
+            extra |= {"naive_exact"} if score == "max_prob" else set()
+            assert set(rules) == set(METHODS) | {"naive"} | extra
+            for r in rules.values():
+                assert set(r["per_group"]) == {str(d) for d in test_days}
+                assert 0.0 <= r["pooled_answer_rate"] <= 1.0
+    assert sb._rule_for("aps_singleton", "fixed_sequence" + sb.HELD_OUT) == "fallback"
+    assert sb._rule_for("margin", "fixed_sequence" + sb.HELD_OUT) == "fixed_sequence" + sb.HELD_OUT
+    within = out["threedc"]["within_sitting"]
+    assert within["procedure_chosen_on"] == [2]
+    r = within["rows"]["temperature"]["max_prob"]["0.97"][within["method"]]
+    assert r["answer_rate"]["n"] == 2  # persons 7 and 8
+    cross = out["threedc"]["cross_person"]["adapt"]
+    assert cross["method"] in METHODS  # no held-out grid: every person is in some pool
+    assert cross["rows"]["temperature"]["margin"]["0.95"]["fallback"]["answer_rate"]["n"] == 2
+    saved = json.loads((tmp_path / "results" / "selective.quick.json").read_text())
+    assert saved["provenance"]["settings"]["delta"] == sb.DELTA
+
+
 def test_partial_calibration_quick(data, tmp_path):
     from myobridge.bench import partial_bench as pb
 
