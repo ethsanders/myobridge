@@ -17,8 +17,10 @@
 - ruff check, ruff format, mypy, mkdocs build --strict passed.
 
 ## Left
-- Confirm the whole pytest suite passes (was running at this commit).
-- Final commit without "WIP:".
+- Nothing required. All checks pass: 371 passed, 1 skipped.
+- Possible follow-ups: transitions with real mixed windows (recorded gesture
+  changes), more than one playback order, choosing the cut-off per recipe
+  temperature.
 
 ## Exploratory numbers (validation days only, before the chaining fix
 ## was added the vote sizes all looked equally fast)
