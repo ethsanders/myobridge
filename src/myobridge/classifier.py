@@ -279,10 +279,11 @@ def adapt(
     0 keeps the old one. The defaults (20 windows, 0.5) are what MultiDay's
     validation days chose for a daily recalibration with 1 s per gesture at
     the default 50 ms step (`bench multiday`); for a new person with 2 s per
-    gesture, 3DC's validation people chose 10 and 1.0. This is the covariate-shift adaptation of Vidovic et
-    al., "Improving the robustness of myoelectric pattern recognition for upper
-    limb prostheses by covariate shift adaptation", IEEE TNSRE 24(9):961-970
-    (2016); `mean_prior` states their mean weight as a number of windows.
+    gesture, 3DC's validation people chose 10 and 1.0. This is the
+    covariate-shift adaptation of Vidovic et al., "Improving the robustness
+    of myoelectric pattern recognition for upper limb prostheses by covariate
+    shift adaptation", IEEE TNSRE 24(9):961-970 (2016); `mean_prior` states
+    their mean weight as a number of windows.
     """
     if base.means_ is None or base.covariance_ is None or base.classes_ is None:
         raise RuntimeError("base classifier must be fitted (and saved in the current format)")

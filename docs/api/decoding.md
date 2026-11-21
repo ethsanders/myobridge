@@ -6,6 +6,8 @@
 
 ::: myobridge.conformal
 
+::: myobridge.selective
+
 ::: myobridge.sessions
 
 ::: myobridge.live_sets

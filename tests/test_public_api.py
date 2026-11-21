@@ -10,6 +10,12 @@ def test_everything_in_all_is_importable():
         assert getattr(myobridge, name) is not None, name
 
 
+def test_both_ways_of_saying_not_sure_are_exported():
+    # gesture sets with a coverage promise, and answers with an accuracy promise
+    assert {"ConformalGestures", "SelectiveGestures"} <= set(myobridge.__all__)
+    assert myobridge.SelectiveGestures.__module__ == "myobridge.selective"
+
+
 def test_version_is_a_release_number():
     major, minor, patch = myobridge.__version__.split(".")
     assert all(part.isdigit() for part in (major, minor, patch))
