@@ -258,8 +258,8 @@ def adapt(
     base: LDAClassifier,
     X_new: ArrayLike,
     y_new: ArrayLike,
-    mean_prior: float = 0.0,
-    covariance_weight: float = 0.0,
+    mean_prior: float = 20.0,
+    covariance_weight: float = 0.5,
 ) -> LDAClassifier:
     """Recalibrate a trained LDA with a small amount of new labelled data.
 
@@ -276,7 +276,10 @@ def adapt(
     `mean_prior` is "how many windows the old mean is worth". 0 means: trust
     the new data completely (classes with no new data keep their old mean).
     `covariance_weight` in [0, 1] blends in the new data's pooled covariance;
-    0 keeps the old one. This is the covariate-shift adaptation of Vidovic et
+    0 keeps the old one. The defaults (20 windows, 0.5) are what MultiDay's
+    validation days chose for a daily recalibration with 1 s per gesture at
+    the default 50 ms step (`bench multiday`); for a new person with 2 s per
+    gesture, 3DC's validation people chose 10 and 1.0. This is the covariate-shift adaptation of Vidovic et
     al., "Improving the robustness of myoelectric pattern recognition for upper
     limb prostheses by covariate shift adaptation", IEEE TNSRE 24(9):961-970
     (2016); `mean_prior` states their mean weight as a number of windows.

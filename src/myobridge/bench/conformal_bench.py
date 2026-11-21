@@ -198,6 +198,7 @@ def _evaluate(
         "set_size_over_groups": summarize([m["mean_set_size"] for m in per.values()]),
         "singleton_rate_over_groups": summarize([m["singleton_rate"] for m in per.values()]),
         "accuracy_when_singleton": pooled_correct / pooled_single if pooled_single else None,
+        "pooled_singleton_rate": pooled_single / sum(len(g.y) for g in groups.values()),
         "coverage_by_gesture": by_class.tolist(),
         "worst_gesture_coverage": float(by_class.min()),
         "by_time_into_hold": {
@@ -235,7 +236,122 @@ def _rows(
             th = _thresholds(cal, a, temp, score, mondrian, seed)
         res = _evaluate(groups, th, a, temp, score, seed)
         res["threshold"] = _describe_thresholds(th)
+        # how often the sets name one gesture on their own calibration windows,
+        # so a rejection rule can be matched without looking at the test windows
+        if isinstance(cal, Mapping):
+            assert isinstance(th, dict)
+            cal_share: Mapping[Any, float] | float = {
+                k: _evaluate(dict(enumerate(c)), th[k], a, temp, score, seed)[
+                    "pooled_singleton_rate"
+                ]
+                for k, c in cal.items()
+            }
+        else:
+            assert not isinstance(th, dict)
+            cal_share = _evaluate(dict(enumerate(cal)), th, a, temp, score, seed)[
+                "pooled_singleton_rate"
+            ]
+        res["baselines"] = _baselines(groups, cal, a, temp, res["pooled_singleton_rate"], cal_share)
         out[str(a)] = res
+    return out
+
+
+def _topk_hits(p: FloatArray, y: IntArray) -> NDArray[np.bool_]:
+    """hits[i, k-1]: is the true class among row i's k most probable?"""
+    order = np.argsort(-p, axis=1, kind="stable")
+    rank = np.argmax(order == y[:, None], axis=1)
+    hits: NDArray[np.bool_] = rank[:, None] < np.arange(1, p.shape[1] + 1)[None, :]
+    return hits
+
+
+def _smallest_k(pool: Sequence[Scored], target: float, temp: float) -> int:
+    """The fewest top guesses that cover `target` of the calibration pool."""
+    hits = np.vstack([_topk_hits(softmax(g.decision, temp), g.y) for g in pool])
+    reach = np.nonzero(hits.mean(axis=0) >= target - 1e-12)[0]
+    return int(reach[0] + 1) if len(reach) else int(hits.shape[1])
+
+
+def _baselines(
+    groups: Mapping[Any, Scored],
+    cal: Sequence[Scored] | Mapping[Any, Sequence[Scored]],
+    alpha: float,
+    temp: float,
+    singleton_share: float,
+    cal_share: Mapping[Any, float] | float | None = None,
+) -> dict[str, Any]:
+    """What simpler rules deliver on the same windows, for comparison.
+
+    - top1: always name the most likely gesture (coverage is accuracy).
+    - fixed_top_k: always name the k most likely, with k the smallest that
+      covers the target on the same calibration windows the sets used.
+    - max_prob / margin rejection: name one gesture only on the most confident
+      windows, as many as the sets named one gesture for (pooled), and abstain
+      on the rest (the classic confidence threshold, e.g. Scheme, Hudgins &
+      Englehart 2013). Matched on the share, so the accuracies compare like
+      for like. The match uses the test windows' own share, which favours
+      the rejection rule a little.
+    - max_prob_rejection_nested: the same, with the cut-off chosen on the
+      calibration windows alone, to name one gesture as often as the sets did
+      there; then frozen.
+    """
+    target = 1 - alpha
+    top1, topk, sizes = [], [], []
+    conf, marg, right = [], [], []
+    nested_named: list[NDArray[np.bool_]] = []
+    nested_per: list[float] = []
+    for key, g in groups.items():
+        p = softmax(g.decision, temp)
+        hits = _topk_hits(p, g.y)
+        pool = cal[key] if isinstance(cal, Mapping) else cal
+        k = _smallest_k(pool, target, temp)
+        top1.append(float(hits[:, 0].mean()))
+        topk.append(float(hits[:, k - 1].mean()))
+        sizes.append(k)
+        ranked = np.sort(p, axis=1)
+        conf.append(ranked[:, -1])
+        marg.append(ranked[:, -1] - ranked[:, -2])
+        right.append(hits[:, 0])
+        if cal_share is not None:
+            share = cal_share[key] if isinstance(cal_share, Mapping) else cal_share
+            pool_conf = np.concatenate([softmax(c.decision, temp).max(axis=1) for c in pool])
+            n_keep = int(round(share * len(pool_conf)))
+            cut = np.sort(pool_conf)[::-1][n_keep - 1] if n_keep else np.inf
+            named = ranked[:, -1] >= cut
+            nested_named.append(named)
+            nested_per.append(float(hits[named, 0].mean()) if named.any() else float("nan"))
+    ok = np.concatenate(right)
+
+    def rejection(score: FloatArray) -> dict[str, float]:
+        n_keep = int(round(singleton_share * len(score)))
+        keep = np.argsort(-score, kind="stable")[:n_keep]
+        return {
+            "named_one_share": n_keep / len(score),
+            "accuracy_when_named": float(ok[keep].mean()) if n_keep else float("nan"),
+        }
+
+    def spread(cov: list[float]) -> dict[str, Any]:
+        arr = np.array(cov)
+        return {
+            "coverage": summarize(cov),
+            "share_within_5_points": float(np.mean(arr >= target - WITHIN_5)),
+            "share_at_or_above_target": float(np.mean(arr >= target)),
+        }
+
+    out: dict[str, Any] = {
+        "top1": spread(top1),
+        "fixed_top_k": spread(topk) | {"k": summarize([float(k) for k in sizes])},
+        "max_prob_rejection": rejection(np.concatenate(conf)),
+        "margin_rejection": rejection(np.concatenate(marg)),
+    }
+    if nested_named:
+        named_all = np.concatenate(nested_named)
+        out["max_prob_rejection_nested"] = {
+            "named_one_share": float(named_all.mean()),
+            "accuracy_when_named": float(ok[named_all].mean()) if named_all.any() else None,
+            "accuracy_when_named_over_groups": summarize([v for v in nested_per if np.isfinite(v)])
+            if any(np.isfinite(v) for v in nested_per)
+            else None,
+        }
     return out
 
 
@@ -366,6 +482,28 @@ def multiday(t: FeatureTable) -> dict[str, Any]:
     trend = _trend(
         rows["adapt_temp_aps"]["0.1"]["per_group"], rows["static_temp_aps"]["0.1"]["per_group"]
     )
+    thresh_pool = {
+        "static": [static[d] for d in thresh_days],
+        "adapt": [adapt_sc[d] for d in thresh_days],
+    }
+    selective = {
+        f"{model}_{tname}": _selective(
+            test_static if model == "static" else test_adapt, thresh_pool[model], temp
+        )
+        for model, tname, temp in (
+            ("static", "no_temperature", 1.0),
+            ("static", "temperature", t_static),
+            ("adapt", "no_temperature", 1.0),
+            ("adapt", "temperature", t_adapt),
+        )
+    }
+    selection = _selection_check(
+        val,
+        static,
+        adapt_sc,
+        same_day_of=lambda d: [Scored.of(adapted[d], _window(t, d, 2.0, mdb.TEST_START_S))],
+    )
+    few = _few_sessions(t, train, test, setting)
 
     # the APS random share: how much the headline row moves with the seed
     seeds = {
@@ -431,9 +569,170 @@ def multiday(t: FeatureTable) -> dict[str, Any]:
         "test_days": test,
         "rows": rows,
         "coverage_trend_at_0.1": trend,
+        "selection_check": selection,
+        "confidence_rejection": selective,
+        "few_sessions": few,
         "seed_spread_adapt_temp_aps": {"seeds": SEEDS, "by_alpha": seed_spread},
         "without_last_second_of_hold": tail,
     }
+
+
+SELECTIVE_TARGETS = (0.95, 0.97)  # "when it answers, it's right this often"
+SELECTIVE_SLACK = 0.02  # a group "keeps" the promise within 2 points of it
+
+
+def _confidence_cutoff(pool: Sequence[Scored], temp: float, target: float) -> float:
+    """The lowest top probability whose accepted windows are right `target` of the time.
+
+    Ties (common without a temperature, where many windows sit at exactly
+    1.0) are kept together: a cut-off accepts every window at or above it.
+    """
+    p = np.vstack([softmax(g.decision, temp) for g in pool])
+    y = np.concatenate([g.y for g in pool])
+    conf, right = p.max(axis=1), p.argmax(axis=1) == y
+    values, inverse = np.unique(-conf, return_inverse=True)  # most confident first
+    n = np.bincount(inverse, minlength=len(values))
+    hit = np.bincount(inverse, weights=right, minlength=len(values))
+    accuracy = np.cumsum(hit) / np.cumsum(n)
+    ok = np.nonzero(accuracy >= target - 1e-12)[0]
+    return float(-values[ok[-1]]) if len(ok) else np.inf
+
+
+def _selective(
+    groups: Mapping[Any, Scored],
+    pools: Sequence[Scored] | Mapping[Any, Sequence[Scored]],
+    temp: float,
+) -> dict[str, Any]:
+    """The classic reject option with a promise: a confidence cut-off chosen on
+    held-out windows so that accepted answers are right SELECTIVE_TARGETS of
+    the time, then frozen, and checked group by group."""
+    out: dict[str, Any] = {"temperature": temp}
+    for target in SELECTIVE_TARGETS:
+        acc, rate, named_right, named_n = [], [], 0, 0
+        for key, g in groups.items():
+            pool = pools[key] if isinstance(pools, Mapping) else pools
+            cut = _confidence_cutoff(pool, temp, target)
+            p = softmax(g.decision, temp)
+            named = p.max(axis=1) >= cut
+            right = p.argmax(axis=1) == g.y
+            rate.append(float(named.mean()))
+            if named.any():
+                acc.append(float(right[named].mean()))
+            named_right += int(right[named].sum())
+            named_n += int(named.sum())
+        arr = np.array(acc)
+        out[str(target)] = {
+            "accuracy_when_answering": summarize(acc) if acc else None,
+            "pooled_accuracy_when_answering": named_right / named_n if named_n else None,
+            "answer_rate": summarize(rate),
+            "share_within_2_points": float(np.mean(arr >= target - SELECTIVE_SLACK))
+            if acc
+            else None,
+            "groups_with_no_answer": int(len(rate) - len(acc)),
+        }
+    return out
+
+
+def _selection_check(
+    val: list[int],
+    static: dict[int, Scored],
+    adapt_sc: dict[int, Scored],
+    same_day_of: Any,
+) -> dict[str, Any]:
+    """The main recipes compared on validation days alone, no test day used.
+
+    Days 11-30 are split: temperature on the first quarter, thresholds on the
+    second, and the comparison on the second half (21-30). If the recipe
+    that wins on days 31-121 also wins here, it could have been chosen
+    without looking at the test days.
+    """
+    q = len(val) // 4
+    temp_d, th_d, eval_d = val[:q], val[q : 2 * q], val[2 * q :]
+    if not (temp_d and th_d and eval_d):
+        return {"note": "too few validation days"}
+    ev_s = {d: static[d] for d in eval_d}
+    ev_a = {d: adapt_sc[d] for d in eval_d}
+    pool_s = [static[d] for d in temp_d + th_d]
+    pool_a = [adapt_sc[d] for d in temp_d + th_d]
+    t_s = _fit_temp([static[d] for d in temp_d])
+    t_a = _fit_temp([adapt_sc[d] for d in temp_d])
+    rows = {
+        "static_validation_days": _rows(ev_s, pool_s),
+        "adapt_validation_days": _rows(ev_a, pool_a),
+        "adapt_same_day": _rows(ev_a, {d: same_day_of(d) for d in eval_d}),
+        "static_temp_aps": _rows(ev_s, [static[d] for d in th_d], t_s, "aps"),
+        "adapt_temp_aps": _rows(ev_a, [adapt_sc[d] for d in th_d], t_a, "aps"),
+        "adapt_temp_lac": _rows(ev_a, [adapt_sc[d] for d in th_d], t_a, "lac"),
+    }
+    return {
+        "temperature_days": temp_d,
+        "threshold_days": th_d,
+        "comparison_days": eval_d,
+        "rows": {
+            name: {
+                a: {
+                    "coverage": r[a]["coverage"]["mean"],
+                    "share_within_5_points": r[a]["share_within_5_points"],
+                    "mean_set_size": r[a]["mean_set_size"],
+                    "top1": r[a]["baselines"]["top1"]["coverage"]["mean"],
+                }
+                for a in map(str, ALPHAS)
+            }
+            for name, r in rows.items()
+        },
+    }
+
+
+def _few_sessions(
+    t: FeatureTable, train: list[int], test: list[int], s: AdaptSetting
+) -> dict[str, Any]:
+    """What `myobridge fit` does with three sessions, on MultiDay.
+
+    For each run of three consecutive days (d, d+1, d+2) among days 1-30:
+    train on day d alone, fit the temperature on day d+1 and set the APS
+    threshold on day d+2 (both adapted with 1 s per gesture first), then
+    keep it on days 31-121, adapting each day. Feature noise floors come
+    from days 1-10, as everywhere else in this benchmark.
+    """
+    days = sorted(set(t.session.tolist()))
+    early = [d for d in days if d <= max(mdb.VAL_DAYS, default=0)]
+    runs = [(d, d + 1, d + 2) for d in early if d + 2 in early]
+    out: dict[str, Any] = {"runs": {}}
+    for run_days in runs:
+        tr = t.where(sessions=[run_days[0]])
+        base = LDAClassifier().fit(tr.X, tr.label)
+
+        def scored(d: int, model: LDAClassifier = base) -> Scored:
+            cal = _window(t, d, mdb.CAL_START_S, mdb.CAL_START_S + ADAPT_SECONDS)
+            return Scored.of(_adapted(model, cal, s), mdb._test(t, d))
+
+        temp = _fit_temp([scored(run_days[1])])
+        thresh_pool = [scored(run_days[2])]
+        groups = {d: scored(d) for d in test}
+        res = _rows(groups, thresh_pool, temp, "aps")
+        key = "-".join(map(str, run_days))
+        out["runs"][key] = {
+            a: {
+                "coverage": res[a]["coverage"]["mean"],
+                "worst_day": res[a]["coverage"]["min"],
+                "share_within_5_points": res[a]["share_within_5_points"],
+                "mean_set_size": res[a]["mean_set_size"],
+                "singleton_rate": res[a]["singleton_rate"],
+                "top1": res[a]["baselines"]["top1"]["coverage"]["mean"],
+            }
+            for a in map(str, ALPHAS)
+        }
+    for a in map(str, ALPHAS):
+        cov = [r[a]["coverage"] for r in out["runs"].values()]
+        if cov:
+            out[a] = {
+                "coverage_over_runs": summarize(cov),
+                "median": float(np.median(cov)),
+                "worst_day_over_runs": float(min(r[a]["worst_day"] for r in out["runs"].values())),
+                "share_runs_within_2_points": float(np.mean(np.array(cov) >= 1 - float(a) - 0.02)),
+            }
+    out["train_days_for_noise_floors"] = train
+    return out
 
 
 def _trend(
@@ -628,6 +927,10 @@ def cross_person(
             ),
             "temperature": temp,
             "rows": {"lac": _rows(rep, pools), "temp_aps": _rows(rep, pools, temp, "aps")},
+            "confidence_rejection": {
+                "no_temperature": _selective(rep, pools, 1.0),
+                "temperature": _selective(rep, pools, temp),
+            },
         }
     return out
 

@@ -86,7 +86,7 @@ brackets are 95% confidence intervals.
 | ... after 1 second per gesture of that day's data, with `adapt()` | 89.0% [88.2, 89.7] |
 | A new person, no calibration | 39.5% |
 | ... with 2 seconds per gesture from them | 77.3% |
-| One electrode comes off, no quality monitor | 24.4% [22.6, 26.3] |
+| One of 10 electrodes comes off, no quality monitor | 24.4% [22.6, 26.3] |
 | ... with the monitor dropping it | 91.2% [90.4, 92.0] |
 
 What stands out:
@@ -106,8 +106,11 @@ What stands out:
 - **A loose electrode is easy to catch.** The monitor notices within about
   a second and switches to a model without that electrode, computed
   instantly from the full one.
-- **It's fast.** Processing a 20 ms packet takes 117 µs (median,
-  550 µs p99), 1.3% of real time.
+- **It's fast, and the delay is in the settings.** Processing a 20 ms
+  packet takes 117 µs (median, 550 µs p99), 1.3% of real time. The output
+  switches about 220 ms after a gesture starts, mostly the 200 ms window
+  and the 5-window vote; that is worked out from the settings, not
+  measured, and leaves out WiFi.
 - **1 kHz sampling is enough for the EMG.** Wideband amplifier noise does
   fold back, +2.9 dB at 1 kHz behind the sensor's gentle filter,
   which the firmware's optional 2x oversampling cuts to +1.0 dB.
@@ -140,7 +143,8 @@ an hour); a test checks that the numbers in the docs match the output.
 - **Drift is measured on one person**, because MultiDay is the best public
   record of day-to-day change I found.
 - **Faults are simulated** on clean recordings, not recorded from real
-  failures.
+  failures. An electrode coming off is simulated as a near-flat signal; on
+  a MyoWare a lifted electrode may float and pick up hum instead.
 
 ## Safety
 

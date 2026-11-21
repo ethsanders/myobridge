@@ -41,7 +41,7 @@ Put the four sensors around the thickest part of the forearm, roughly evenly
 spaced, each with its two electrodes along the muscle and the reference
 electrode on a bony spot such as the elbow. The benchmarks use the same
 "four spread evenly" layout on the 3DC armband; on 11 gestures it costs about
-10 points of accuracy against 10 electrodes (see [Results](results.md)).
+7 points of accuracy against 10 electrodes (92.4% against 85.0%) (see [Results](results.md)).
 
 ## Flash the firmware
 

@@ -199,6 +199,17 @@ def test_conformal_quick(data, tmp_path):
         assert 0.0 <= r["coverage"]["mean"] <= 1.0
         assert len(r["coverage_by_gesture"]) == 11
         assert sum(b["n_windows"] for b in r["by_time_into_hold"].values()) > 0
+    base = row["0.1"]["baselines"]
+    assert set(base) == {"top1", "fixed_top_k", "max_prob_rejection", "margin_rejection"}
+    assert base["max_prob_rejection"]["named_one_share"] == pytest.approx(
+        row["0.1"]["pooled_singleton_rate"], abs=1e-3
+    )
+    # three consecutive days, each before the test days, as `myobridge fit` uses them
+    few = out["multiday"]["few_sessions"]
+    assert set(few["runs"]) == {"1-2-3", "11-12-13"}
+    assert few["0.1"]["coverage_over_runs"]["n"] == 2
+    # too few validation days in the fake set for the selection check
+    assert "note" in out["multiday"]["selection_check"]
     spread = out["multiday"]["seed_spread_adapt_temp_aps"]
     assert spread["seeds"] == cb.SEEDS
     assert spread["by_alpha"]["0.1"]["coverage"]["n"] == len(cb.SEEDS)
@@ -212,6 +223,31 @@ def test_conformal_quick(data, tmp_path):
     assert set(flt) == {"clean", "no_monitor", "monitor", "monitor_shared_threshold", "oracle_drop"}
     saved = json.loads((tmp_path / "results" / "conformal.quick.json").read_text())
     assert saved["datasets"]["3dc"]["commit"] == out["datasets"]["3dc"]["commit"]
+
+
+def test_conformal_baselines_by_hand():
+    from myobridge.bench import conformal_bench as cb
+
+    # three windows, three classes; decisions chosen so the ranking is plain
+    decision = np.log(
+        np.array([[0.7, 0.2, 0.1], [0.4, 0.5, 0.1], [0.1, 0.3, 0.6], [0.34, 0.33, 0.33]])
+    )
+    y = np.array([0, 0, 2, 2])
+    g = cb.Scored(decision, y)
+    hits = cb._topk_hits(np.exp(decision), y)
+    assert hits[:, 0].tolist() == [True, False, True, False]
+    assert hits[:, 1].tolist() == [True, True, True, False]
+    assert hits[:, 2].all()
+    # top-1 covers 50% of the pool, top-2 75%, top-3 all of it
+    assert cb._smallest_k([g], 0.5, 1.0) == 1
+    assert cb._smallest_k([g], 0.75, 1.0) == 2
+    assert cb._smallest_k([g], 0.9, 1.0) == 3
+    out = cb._baselines({"a": g}, [g], 0.25, 1.0, singleton_share=0.5)
+    assert out["top1"]["coverage"]["mean"] == pytest.approx(0.5)
+    assert out["fixed_top_k"]["coverage"]["mean"] == pytest.approx(0.75)
+    assert out["fixed_top_k"]["k"]["mean"] == 2
+    # the two most confident windows (0.7 and 0.6) are both right
+    assert out["max_prob_rejection"] == {"named_one_share": 0.5, "accuracy_when_named": 1.0}
 
 
 def test_partial_calibration_quick(data, tmp_path):

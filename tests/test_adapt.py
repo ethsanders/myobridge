@@ -19,7 +19,7 @@ def test_adapt_with_no_prior_moves_means_to_the_new_data():
     rng = np.random.default_rng(0)
     base = LDAClassifier().fit(*blobs(rng, MEANS))
     Xn, yn = blobs(rng, MEANS + 3.0, n=50)
-    m = adapt(base, Xn, yn, mean_prior=0.0)
+    m = adapt(base, Xn, yn, mean_prior=0.0, covariance_weight=0.0)
     for c in range(3):
         assert np.allclose(m.means_[c], Xn[yn == c].mean(axis=0))
     assert np.allclose(m.covariance_, base.covariance_)  # covariance kept
@@ -68,7 +68,7 @@ def test_adapt_fixes_a_shift_the_old_model_gets_wrong():
     Xtest, ytest = blobs(rng, shifted)
     Xcal, ycal = blobs(rng, shifted, n=5)
     assert base.score(Xtest, ytest) < 0.8
-    assert adapt(base, Xcal, ycal).score(Xtest, ytest) > 0.95
+    assert adapt(base, Xcal, ycal, mean_prior=0.0, covariance_weight=0.0).score(Xtest, ytest) > 0.95
 
 
 def test_adapt_validates_inputs():
@@ -94,6 +94,20 @@ def test_adapted_model_survives_save_and_load(tmp_path):
     X, _ = blobs(rng, MEANS, n=20)
     assert np.array_equal(again.predict(X), m.predict(X))
     assert np.allclose(adapt(again, X[:5], np.zeros(5, int)).means_[1], m.means_[1])
+
+
+def test_defaults_are_the_benchmarked_setting():
+    # plain adapt() should run the setting MultiDay's validation days chose,
+    # the one sessions.recalibrate and the conformal recipe use
+    from myobridge import sessions
+
+    rng = np.random.default_rng(8)
+    base = LDAClassifier().fit(*blobs(rng, MEANS))
+    Xn, yn = blobs(rng, MEANS + 1, n=10)
+    chosen = adapt(base, Xn, yn, sessions.MEAN_PRIOR, sessions.COVARIANCE_WEIGHT)
+    plain = adapt(base, Xn, yn)
+    assert np.allclose(plain.means_, chosen.means_)
+    assert np.allclose(plain.covariance_, chosen.covariance_)
 
 
 def test_matches_scikit_learn():
