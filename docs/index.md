@@ -57,6 +57,9 @@ quality monitor drops it and the decoder keeps going on the other three.*
 - **Knowing when it doesn't know**: gesture sets that hold the right
   gesture a promised share of the time, and keep that promise across days
   after recalibration ([details](conformal.md)).
+- **Decision policies** that act only when a window is confident enough and
+  otherwise keep the last action, measured in wrong actions per minute
+  ([details](decisions.md)).
 - **A signal-quality monitor** that spots a lifted or clipping electrode
   within about a second and switches to a model without it.
 - **Benchmarks** on two public datasets, with splits by recording, day and

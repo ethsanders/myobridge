@@ -8,6 +8,9 @@ same model minus that channel's features until the channel recovers.
 Give it a `ConformalGestures` calibration too and each prediction also
 carries the window's gesture *set*: one gesture when the model is sure, more
 (or none) when it isn't. See `myobridge.conformal`.
+
+Give it a `DecisionPolicy` (see `myobridge.gating`) and each prediction also
+carries the policy's `action`: the gesture to act on, or None to hold.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from .quality import DROP_CHANNEL_ON, Issue, QualityMonitor, QualityReport
 
 if TYPE_CHECKING:
     from .conformal import ConformalGestures
+    from .gating import DecisionPolicy
 
 
 @dataclass
@@ -38,6 +42,7 @@ class Prediction:
     sample_index: int  # stream position (samples) where the window ended
     dropped_channels: tuple[int, ...] = ()  # channels left out because the monitor flagged them
     gesture_set: tuple[str, ...] | None = None  # this window's conformal set, if calibrated
+    action: str | None = None  # the policy's decision (None: hold); `gesture` without a policy
 
     @property
     def sure(self) -> bool:
@@ -57,6 +62,12 @@ class GesturePipeline:
     A model from `calibrate` (or a file it saved) knows the sample rate and
     window it was trained with; `GesturePipeline.from_model` uses them, and
     passing a different sample rate or window here raises an error.
+
+    `policy` (see `myobridge.gating`) decides, window by window, whether to
+    act and on which gesture; its answer is `Prediction.action`. It sees the
+    conformal calibration's temperature-scaled probabilities when there is
+    one (else the model's own) and the conformal sets. Without a policy,
+    `action` is the voted `gesture`, as before.
     """
 
     def __init__(
@@ -73,11 +84,14 @@ class GesturePipeline:
         monitor: QualityMonitor | None = None,
         drop_on: Collection[Issue] = DROP_CHANNEL_ON,
         conformal: ConformalGestures | None = None,
+        policy: DecisionPolicy | None = None,
     ):
         if not model.is_fitted:
             raise ValueError("the model is not fitted")
         if monitor is not None and monitor.n_channels != n_channels:
             raise ValueError("the monitor watches a different number of channels")
+        if policy is not None and policy.needs_sets and conformal is None:
+            raise ValueError(f"{type(policy).__name__} needs conformal sets: pass conformal=...")
         if conformal is not None and conformal.model is not model:
             conformal = conformal.with_model(model)  # same classes required
         trained = model.settings
@@ -112,6 +126,7 @@ class GesturePipeline:
         self._conformal: dict[tuple[int, ...], ConformalGestures] = {}
         if conformal is not None:
             self._conformal[()] = conformal
+        self.policy = policy
 
     @classmethod
     def from_model(cls, model: LDAClassifier, n_channels: int, **overrides: Any) -> GesturePipeline:
@@ -162,12 +177,22 @@ class GesturePipeline:
             keep = [c for c in range(self.n_channels) if c not in self.dropped]
             X = X[:, channel_columns(keep, self.n_channels, self.feature_set)]
         sets = None
+        scaled = None
         if self.conformal is not None:
-            sets = self._conformal_without(self.dropped).predict_sets(X)
+            conf = self._conformal_without(self.dropped)
+            sets = conf.predict_sets(X)
+            if self.policy is not None:
+                scaled = conf.predict_proba(X)
         predictions = []
         for i, proba in enumerate(model.predict_proba(X)):
             label = self._labels[int(np.argmax(proba))]
             voted = self.vote.update(label)
+            action: str | None = voted
+            if self.policy is not None:
+                chosen = self.policy.step(
+                    proba if scaled is None else scaled[i], None if sets is None else sets[i]
+                )
+                action = None if chosen is None else self._labels[chosen]
             predictions.append(
                 Prediction(
                     gesture=voted,
@@ -178,6 +203,7 @@ class GesturePipeline:
                     gesture_set=None
                     if sets is None
                     else tuple(self._labels[j] for j in np.flatnonzero(sets[i])),
+                    action=action,
                 )
             )
         return predictions

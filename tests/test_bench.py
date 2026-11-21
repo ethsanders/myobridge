@@ -315,3 +315,68 @@ def test_demo_quick(data, tmp_path):
     }
     assert out["temperatures"]["adapt-textbook"] == 1.0
     assert demo_bench._encode(np.array([[True, False, True], [False, False, False]])) == [5, 0]
+
+
+def test_decision_quick(data, tmp_path):
+    from myobridge.bench import decision_bench as db
+
+    out = bench.EXPERIMENTS["decision"](opts(data, tmp_path))
+    md = out["multiday"]
+    assert md["report_groups"] == [str(d) for d in multiday_bench.TEST_DAYS[:6]]
+    assert not set(md["validation_groups"]) & set(md["report_groups"])
+    base = md["settings"][db.BASELINE]
+    assert base["report"]["from_2.5s.acting_share"]["mean"] == 1.0  # a vote never holds
+    assert set(base["per_group"]) == set(md["report_groups"])
+    # every choice was made at the baseline's own validation numbers, or not at all
+    picks = md["chosen"][f"matched@{db.BASELINE}"]
+    assert set(picks) == {f"{f}_{m}" for f in db.FAMILIES for m in db.HOLD_MODES}
+    for name in filter(None, picks.values()):
+        row = md["settings"][name]
+        assert row["validation"]["time_to_correct_s"] <= base["validation"]["time_to_correct_s"]
+        assert set(row["verdict"]) == {
+            "fewer_wrong_actions",
+            "not_slower",
+            "not_less_often_right",
+            "wins",
+        }
+    for part in ("within_sitting", "cross_person"):
+        res = out["threedc"][part]
+        assert res["report_groups"] == ["7"]
+        assert res["validation_groups"] == ["1"]
+        for name in res["fixed_from_elsewhere"].values():
+            assert name in res["settings"]
+    saved = json.loads((tmp_path / "results" / "decision.quick.json").read_text())
+    assert saved["quick"] is True
+
+
+def test_decision_metrics_count_wrong_actions():
+    from myobridge.bench import decision_bench as db
+
+    t = np.arange(10) * 0.5  # windows 0.5 s apart; 2.5 s and later are scored
+    hold = db.Stream(np.zeros((10, 3)), {}, 1, t, t + 0.2)
+    d = np.array([0, 0, 1, 2, 2, 2, -1, 1, 0, 1])
+    m = db.group_metrics([hold], [d])
+    late = m["from_2.5s"]  # windows 5-9: 2, hold, 1, 0, 1
+    assert late["acting_share"] == pytest.approx(0.8)
+    assert late["correct_share"] == pytest.approx(0.4)
+    assert late["wrong_share"] == pytest.approx(0.4)
+    # two wrong actions overlap the span: the 2 that began before it, and the 0
+    assert late["wrong_per_min"] == pytest.approx(2 / (5 * 0.5 / 60))
+    assert m["from_onset"]["wrong_per_min"] == pytest.approx(3 / (10 * 0.5 / 60))
+    assert m["time_to_correct_s"] == pytest.approx(1.0)  # window 2, 1 s after the first
+    assert m["never_correct"] == 0.0
+    never = db.group_metrics([hold], [np.zeros(10, dtype=np.intp)])
+    assert never["never_correct"] == 1.0
+    assert never["time_to_correct_s"] == pytest.approx(5.0)
+    assert never["from_onset"]["ever_wrong"] == 1.0
+
+
+def test_decision_holds_are_played_back_to_back():
+    from myobridge.bench import decision_bench as db
+
+    t = np.arange(4) * 0.05
+    a = db.Stream(np.tile([0.9, 0.05, 0.05], (4, 1)), {}, 0, t, t + 0.2)
+    b = db.Stream(np.tile([0.05, 0.9, 0.05], (4, 1)), {}, 1, t, t + 0.2)
+    first, second = db.decide(db.Config("vote", (("k", 5),)), [a, b])
+    assert first.tolist() == [0, 0, 0, 0]
+    assert second.tolist() == [0, 0, 1, 1]  # the vote still remembers gesture 0

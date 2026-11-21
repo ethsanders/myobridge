@@ -30,6 +30,7 @@ from .features import (
     extract_features,
     feature_names,
 )
+from .gating import ConfidenceGate, DecisionPolicy, EvidenceGate, SetGate, VotePolicy
 from .lsl import LslOutlets
 from .pipeline import GesturePipeline, Prediction
 from .protocol import Packet, decode_packet, encode_packet
@@ -43,10 +44,13 @@ __version__ = "0.2.0"
 
 __all__ = [
     "DEFAULT_FEATURE_SET",
+    "ConfidenceGate",
     "ConformalGestures",
+    "DecisionPolicy",
     "FEATURE_SETS",
     "EmgFilter",
     "EmgSimulator",
+    "EvidenceGate",
     "Fault",
     "GesturePipeline",
     "Issue",
@@ -61,7 +65,9 @@ __all__ = [
     "Receiver",
     "Replay",
     "Session",
+    "SetGate",
     "TrainingSettings",
+    "VotePolicy",
     "__version__",
     "adapt",
     "calibrate",

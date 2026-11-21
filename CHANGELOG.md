@@ -8,6 +8,19 @@ All notable changes to myobridge. The format follows
 
 ### Added
 
+- `myobridge.gating`: decision policies that say, window by window, whether
+  to act and on which gesture. `VotePolicy` (the pipeline's vote),
+  `ConfidenceGate`, `SetGate` (conformal sets) and `EvidenceGate` (leaky
+  evidence accumulation), each with an optional latch that keeps the last
+  action instead of holding with nothing. `GesturePipeline(policy=...)` adds
+  the decision to every `Prediction` as `prediction.action`; without a
+  policy nothing changes.
+- `myobridge bench decision`: wrong actions per minute, time to the right
+  action and time spent acting, on holds played back to back, with every
+  setting chosen on validation data. On MultiDay, `ConfidenceGate(0.7, k=1,
+  latch=True)` makes 14.0 wrong actions per minute against 25.6 for the
+  5-window vote, at the same speed. On 3DC the gain is smaller. Guide:
+  "Acting on it".
 - The recipe on your own armband. `myobridge calibrate --session day1.npz`
   keeps the raw recordings. `myobridge fit day1.npz day2.npz day3.npz` trains
   on the early sessions and fits the temperature and threshold on the later

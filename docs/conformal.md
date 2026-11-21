@@ -168,7 +168,8 @@ days, with the textbook recipe and an electrode failure a click away.
   pattern.
 - **Coverage is per window, not per decision.** The pipeline's majority vote
   smooths the gesture it reports, but `gesture_set` belongs to the newest
-  window.
+  window. What sets do for decisions is measured in
+  [Acting on it](decisions.md): a plain confidence cut-off does more.
 - **Cost.** Two things to fit, one temperature and one threshold, both
   instant. Prediction adds a sort of 11 numbers per window.
 

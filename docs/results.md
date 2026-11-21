@@ -266,7 +266,26 @@ one temperature and using the APS score keeps the promise on all 91 test
 days, within 5 points on every one. A broken electrode breaks it again,
 silently, which is why the quality monitor runs first.
 
-## 9. Speed
+## 9. Acting on it (MultiDay, 3DC)
+
+Summarised here, in full in [decisions.md](decisions.md). What a user feels
+is decisions, not windows: how often the output is a wrong gesture. Holds
+are played back to back through a decision policy, so every hold begins as
+a gesture change. Settings are chosen on validation days and people, matched
+to the 5-window vote's speed and time on the right gesture.
+
+| Wrong actions per minute, from 2.5 s | 5-window vote | Best policy chosen on validation | Change |
+|---|---|---|---|
+| MultiDay days 31-121 | 25.6 | 14.0 (confidence 0.7, latched) | −11.6 [−12.8, −10.6] |
+| 3DC after the break | 12.4 | 10.0 (evidence, latched) | −2.4 [−3.8, −1.2] |
+| 3DC new person, 2 s per gesture | 33.2 | 27.9 (evidence, latched) | −5.2 [−10.0, −1.1] |
+
+**Reading:** keeping the last action until a window is confident enough
+makes clearly fewer wrong actions on MultiDay, at the same speed. On 3DC the
+gain is smaller. Acting only on one-gesture conformal sets helps less than a
+plain confidence cut-off.
+
+## 10. Speed
 
 Measured by `myobridge bench latency` on the machine that produced the
 results file (its CPU is recorded there), with the live code path: 4
