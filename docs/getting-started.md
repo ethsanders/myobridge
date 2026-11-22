@@ -1,7 +1,7 @@
 # Getting started
 
-This page takes you from nothing installed to decoding gestures: first from
-a simulated armband, then from a real person's recordings, then live.
+This page covers installing myobridge and running the decoder on simulated
+data, on recorded data from a public dataset, and on a live armband.
 
 ## Install
 
@@ -21,8 +21,8 @@ pip install -e ".[dev]"
 
 ## Decode a simulated arm
 
-No data or hardware needed. The simulator stands in for the armband: it
-produces the same 4-channel, 1 kHz stream of ADC counts.
+This example needs no data or hardware. The simulator stands in for the
+armband and produces the same 4-channel, 1 kHz stream of ADC counts.
 
 ```python
 --8<-- "examples/decode_simulated.py"
@@ -35,26 +35,26 @@ holding   rest: decoded rest in 34 of 40 decisions
 holding extend: decoded extend in 35 of 40 decisions
 ```
 
-Two things to notice:
+`calibrate` takes any function that records a gesture for a given number
+of seconds. If the simulator is replaced with the UDP receiver, the same code
+calibrates on a real arm.
 
-- `calibrate` takes any function that records a gesture for some seconds.
-  Swap the simulator for the UDP receiver and the same code calibrates on a
-  real arm.
-- `GesturePipeline.from_model` builds the live pipeline with the sample
-  rate, window and thresholds the model was trained with, so training and
-  live use can't drift apart. A model saved with `model.save("model.npz")`
-  keeps them too.
+`GesturePipeline.from_model` builds the live pipeline with the sample rate,
+window and thresholds the model was trained with, so the training and live
+settings cannot diverge. A model saved with `model.save("model.npz")` stores
+these settings as well.
 
-The simulator is clean, band-limited noise, so it only proves the plumbing.
-For a real test, use real muscles.
+The simulator produces clean, band-limited noise, so this example only shows
+that the code runs from end to end. It says nothing about accuracy on real
+muscles, which the next section tests.
 
 ## Decode a real forearm
 
 The [3DC dataset](datasets.md) has 22 people doing 11 hand and wrist
 gestures with a 10-electrode armband. This script calibrates on one
 person's first two passes through the gestures, then streams a later pass
-through the live pipeline, 20 samples at a time, and pulls an electrode off
-half-way:
+through the live pipeline, 20 samples at a time. Half-way through, it
+simulates an electrode coming off.
 
 ```bash
 myobridge fetch 3dc      # once; clones the dataset at a pinned commit (about 1.3 GB)
@@ -65,13 +65,14 @@ python examples/replay_3dc.py --person 7
 --8<-- "examples/replay_3dc.py"
 ```
 
-The [live demo](demo/index.html) runs this same code in your browser, with a
-menu to break any electrode.
+The [live demo](demo/index.html) runs the same code in the browser and has a
+menu for disconnecting any electrode.
 
 ## Run it live
 
-With the ESP32 armband (see [Build the armband](hardware.md)), or the
-simulator standing in for it over UDP:
+These commands work with the ESP32 armband (see
+[Build the armband](hardware.md)) or with the simulator sending packets over
+UDP in its place.
 
 ```bash
 myobridge simulate --port 5005 --drop 0.01       # skip this with the real armband
@@ -80,21 +81,22 @@ myobridge calibrate --seconds 5 --out model.npz  # hold each gesture when asked
 myobridge forward --model model.npz --to 127.0.0.1:5006 --verbose
 ```
 
-`forward` sends one JSON message per decision to the address you give, for a
-game engine to read. The message format is in
+`forward` sends one JSON message per decision to the given address, where a
+game engine can read it. The message format is described in
 [Send gestures to a game](protocol.md).
 
-Add `--lsl` to also publish on [Lab Streaming Layer](https://labstreaminglayer.org),
-which recorders like LabRecorder and most neuroscience tools can read: a
-`myobridge-emg` stream with the raw samples and a `myobridge-gestures`
-stream with one marker per decision. It needs `pip install "myobridge[lsl]"`.
+With `--lsl`, `forward` also publishes two streams on
+[Lab Streaming Layer](https://labstreaminglayer.org), which LabRecorder and
+most neuroscience tools can read. The `myobridge-emg` stream carries the raw
+samples, and the `myobridge-gestures` stream carries one marker per decision.
+This option needs `pip install "myobridge[lsl]"`.
 
 Outside North America, put `--mains 50` before the subcommand, for example
 `myobridge --mains 50 listen`.
 
 ## Reproduce the results
 
-Every number in [Results](results.md) comes from one command:
+The numbers in [Results](results.md) are produced by `myobridge bench`:
 
 ```bash
 myobridge fetch      # both datasets at pinned commits, about 4 GB
@@ -102,5 +104,5 @@ myobridge bench      # writes results/*.json and docs/figures/*.png, about 25 mi
 pytest tests/test_docs.py
 ```
 
-The last line checks that every number quoted in the docs matches the
-fresh results.
+The last command checks that the numbers quoted in the docs match the new
+results.

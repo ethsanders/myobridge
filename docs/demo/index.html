@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myobridge: a gesture decoder that says when it isn't sure</title>
+  <title>myobridge demo: gesture sets on real EMG</title>
   <meta name="description" content="A forearm EMG gesture decoder that answers with a set of gestures and a promise: the right one is in it 90% of the time, and that promise holds across 91 days of real recordings.">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,15 +15,15 @@
 
   <main>
     <section class="intro">
-      <h1>It tells you when it doesn't know</h1>
+      <h1>Gesture sets across days</h1>
       <p class="lede">
-        A gesture decoder usually names one gesture for every 50 ms of forearm muscle
-        signal, right or wrong. This one answers with a set and a promise: the gesture you
-        are holding is in the set 90% of the time. One gesture in the set means it's sure.
-        Several mean it's torn, and a prosthesis or a game can wait instead of guessing.
+        A gesture decoder normally outputs one gesture for every 50 ms of forearm EMG. This
+        one can output a set of gestures instead, calibrated so that the gesture being held is
+        in the set 90% of the time. A set with one gesture means the decoder is confident; a
+        larger set means it is not, and an application can wait instead of acting.
       </p>
       <p class="lede">
-        The hard part is keeping that promise after the armband comes off and goes back on.
+        The difficulty is keeping that 90% after the armband is removed and put back on.
         Below is one person on four different days, months after the decoder was trained.
       </p>
     </section>
@@ -85,14 +85,15 @@
       <h2>Try this</h2>
       <ol>
         <li>Switch to <em>the textbook recipe</em>: the usual score, its threshold set on days
-          11-30, and no recalibration. It makes the same 90% promise and keeps it less and less
-          as the days go by. Try day 91.</li>
-        <li>Tick <em>Recalibrate</em> with the textbook recipe. A second of each gesture from
-          today gets close on some days and not on others: its probabilities are nearly all 0
-          or 1, so the threshold has nothing to work with. <span id="rival-note"></span></li>
-        <li>Lift electrode 1 without the quality monitor. The sets start missing: a broken
-          electrode doesn't make the decoder unsure, it makes it wrong. Turn the monitor on and the
-          promise holds again, with bigger sets, because four electrodes became three.</li>
+          11-30, and no recalibration. It targets the same 90%, and its coverage falls further
+          below that as the days go by. Try day 91.</li>
+        <li>Tick <em>Recalibrate</em> with the textbook recipe. One second of each gesture from
+          that day brings it close on some days and not on others, because its probabilities are
+          almost all 0 or 1 and the threshold cannot separate them. <span id="rival-note"></span></li>
+        <li>Lift electrode 1 without the quality monitor. The sets start to miss, because a
+          broken electrode makes the decoder wrong rather than uncertain. With the monitor on,
+          coverage recovers and the sets get larger, since the decoder now has three electrodes
+          instead of four.</li>
       </ol>
       <p>
         These are the decoder's real outputs on MultiDay days 31, 61, 91 and 121 (one person,
@@ -104,13 +105,13 @@
     </section>
 
     <section class="intro live-intro">
-      <h2>Now break one yourself</h2>
+      <h2>Live decoding with electrode faults</h2>
       <p>
         This part runs the myobridge Python library itself in your browser (via
         <a href="https://pyodide.org">Pyodide</a>) on a different dataset,
         <a href="https://github.com/libemg/3DCDataset">3DC</a>. It calibrates on part of a
         person's session, then streams the rest through the live pipeline 20 samples at a time,
-        exactly as packets arrive from the armband. Pick a fault for any electrode while it plays.
+        as packets arrive from the armband. You can set a fault on any electrode while it plays.
       </p>
     </section>
 
@@ -182,7 +183,7 @@
     </section>
 
     <section class="notes">
-      <h2>What you're seeing in the live part</h2>
+      <h2>Notes on the live part</h2>
       <ul>
         <li>The model is LDA on 15 features per electrode, trained on the person's first two
           cycles through the 11 gestures (about 2 minutes of data). It then decodes their first

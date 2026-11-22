@@ -1,9 +1,9 @@
 # myobridge wire protocol (version 1)
 
 One UDP datagram carries one packet. A packet holds `n_frames` consecutive
-samples from every channel. All multi-byte fields are **little-endian** (the
-native byte order of both the ESP32 and x86/ARM PCs, written out explicitly so
-the format never depends on the CPU).
+samples from every channel. All multi-byte fields are **little-endian**. That is
+the native byte order of both the ESP32 and x86/ARM PCs, but it is stated
+here explicitly so that the format does not depend on the CPU.
 
 ## Layout
 
@@ -19,21 +19,22 @@ the format never depends on the CPU).
 | 20     | 2·C·N| i16[]  | `samples`      | Interleaved by frame: `f0c0 f0c1 … f0cC-1 f1c0 …` |
 | 20+2CN | 2    | u16    | `crc`          | CRC-16/CCITT-FALSE over bytes `0 .. 20+2CN-1` |
 
-Header = 20 bytes, trailer = 2 bytes. With the default 4 channels × 20 frames
-a packet is `20 + 160 + 2 = 182` bytes, sent 50 times per second
-(~73 kbit/s including UDP/IP headers, a tiny fraction of WiFi bandwidth).
+The header is 20 bytes and the trailer 2 bytes. With the default 4 channels
+× 20 frames a packet is `20 + 160 + 2 = 182` bytes, sent 50 times per second.
+That is ~73 kbit/s including UDP/IP headers, a small fraction of WiFi
+bandwidth.
 
 Samples are ADC counts minus the ADC midpoint (2048 for 12 bits), so the
-signal is centred near zero. 12-bit values fit comfortably in int16.
+signal is centred near zero. 12-bit values fit in int16 with room to spare.
 
 ## CRC
 
 CRC-16/CCITT-FALSE: polynomial `0x1021`, initial value `0xFFFF`, input and
 output not reflected, final XOR `0x0000`. Check value: `"123456789"` → `0x29B1`.
 
-UDP already has a 16-bit checksum, but it is optional over IPv4 and some
-stacks/NICs/bridges zero it out; our own CRC makes corruption detection
-end-to-end and testable.
+UDP already has a 16-bit checksum, but it is optional over IPv4, and some
+network stacks, NICs and bridges zero it out. A CRC in the packet itself
+detects corruption end to end and can be tested.
 
 ## Receiver rules
 
@@ -47,7 +48,7 @@ A datagram is rejected (counted as `corrupt`) if:
 6. the CRC doesn't match (`crc`),
 7. `n_channels` or `sample_rate` is 0 (`format`).
 
-`n_frames = 0` is valid: the packet just carries no samples.
+`n_frames = 0` is valid. Such a packet carries no samples.
 
 Valid packets go through the sequence tracker. With `expected` = last
 accepted `seq` + 1, and all arithmetic modulo 2³²:
@@ -66,8 +67,8 @@ different timestamp, when a "late" packet's timestamp doesn't lie between
 those of the packets either side of it, or when a newer `seq` carries an
 older timestamp than the last packet.
 
-Late packets are discarded because the streaming filters can't go back in
-time; inserting an old block would corrupt their state.
+Late packets are discarded because the streaming filters cannot go back in
+time. Inserting an old block would corrupt their state.
 
 ## Gesture output (`myobridge forward`)
 
@@ -87,12 +88,13 @@ default) as a UDP datagram, UTF-8, to the game engine (default
 | `seq` | Message counter, so the app can ignore stale/out-of-order messages |
 | `t` | Sender's Unix time in seconds |
 
-A Unity script only needs a `UdpClient` on port 5006 and `JsonUtility.FromJson`
-on each datagram; keep the latest message and act on it in `Update()`.
+A Unity script needs a `UdpClient` on port 5006 and `JsonUtility.FromJson`
+on each datagram. It should keep the latest message and act on it in
+`Update()`.
 
 ## Lab Streaming Layer (`myobridge forward --lsl [NAME]`)
 
-The same decisions can also go out on Lab Streaming Layer, alongside the
+The same decisions can also be sent on Lab Streaming Layer, alongside the
 UDP JSON. `NAME` defaults to `myobridge`. Two streams share the device's
 source id, so a recording of both lines up:
 

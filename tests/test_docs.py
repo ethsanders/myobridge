@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from myobridge.quality import QualityConfig
@@ -447,3 +448,18 @@ def test_decisions() -> None:
         pct(cross["settings"]["confidence_k1_cutoff0.7_latch"]["report"]["never_correct"]["mean"]),
     )
     assert_quoted(text, f"{md['n_settings_tried']} settings")
+    # the same picks on 10 more playback orders
+    orders = md["playback_orders"]["settings"]
+    rates = {n: orders[n]["by_order"]["wrong_per_min"] for n in orders}
+    for n in ("vote_k5", "confidence_k1_cutoff0.7_latch"):
+        assert max(rates[n]) - min(rates[n]) < 1e-9  # the docs say "the same on every order"
+    assert orders["confidence_k1_cutoff0.7_latch"]["wins_on_every_order"]
+    sg = rates["set_alpha0.2_n1_m1_latch"]
+    ttc = {n: np.array(orders[n]["by_order"]["time_to_correct_s"]) for n in orders}
+    lag = (ttc["confidence_k1_cutoff0.7_latch"] - ttc["vote_k5"]) * 1000
+    assert_quoted(
+        " ".join(text.split()),
+        f"{len(md['playback_orders']['seeds'])} more orders",
+        f"between {min(sg):.1f} and {max(sg):.1f}",
+        f"{np.floor(lag.min()):.0f} to {np.ceil(lag.max()):.0f} ms",
+    )

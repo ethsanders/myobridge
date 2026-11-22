@@ -1,20 +1,21 @@
 # myobridge
 
-**A gesture decoder that says how sure it is, and stays honest about it from one day to the next.**
-Each decision can come as a set of gestures that should hold the right one
-90% of the time. On one person over months, with the electrodes put back on
-every day, the sets delivered 89.1% overall and at least 85.2% on every one
-of 91 later days, where the plain decoder dropped to 75.7% on its worst
-([how](conformal.md)).
+myobridge decodes hand gestures from forearm EMG in real time, using four
+sensors on an ESP32 that stream over WiFi and a Python library that filters
+the signal and runs the decoder.
+
+The decoder can report a set of gestures calibrated to contain the correct
+one 90% of the time. On one person recorded over months, with the electrodes
+replaced each day, the sets covered the correct gesture 89.1% of the time
+overall and at least 85.2% on each of 91 later days. The single-answer
+decoder's worst day was 75.7% ([method and comparisons](conformal.md)).
 
 ![One recorded day: the decoder's sets, the textbook recipe, and an electrode coming off](figures/sets.gif)
 
-myobridge turns the electrical activity of forearm muscles into hand
-gestures, live. It covers the whole path: firmware that streams four EMG
-sensors from an ESP32 over WiFi, a Python library that cleans the signal and
-decodes gestures in about a tenth of a millisecond per packet, and
-benchmarks on public datasets that say how well it works and where it
-breaks.
+The firmware samples at 1 kHz and sends 20-sample packets. The library
+processes each packet in about a tenth of a millisecond. The benchmarks on
+public datasets measure accuracy across days and people, and what happens
+when an electrode fails.
 
 ![A real recording decoded live: one electrode comes off and the decoder carries on without it](figures/demo.gif)
 
@@ -26,47 +27,46 @@ quality monitor drops it and the decoder keeps going on the other three.*
 
 - **[Try the live demo](demo/index.html)**
 
-    Watch the promise hold, break and recover on real recordings, then break
-    an electrode yourself. Nothing to install.
+    Real recordings decoded in the browser. You can disconnect an electrode
+    and see how the decoder and the sets respond.
 
 - **[Get started](getting-started.md)**
 
-    Install the library and decode a simulated arm, a real one from a
-    public dataset, or your own.
+    Installation, then decoding the simulator, a public dataset, or your own
+    armband.
 
 - **[Build the armband](hardware.md)**
 
-    Four MyoWare sensors, an ESP32 and a battery. Wiring, firmware and the
-    first checks.
+    Parts list (four MyoWare sensors, an ESP32, a battery), wiring, firmware
+    and first checks.
 
 - **[See the results](results.md)**
 
-    Accuracy across days, people and electrode counts, what one second of
-    recalibration buys, and what a loose electrode costs.
+    Accuracy across days, people and electrode counts, the effect of one
+    second of recalibration, and the cost of a loose electrode.
 
 </div>
 
-## What's in it
+## Contents
 
-- **Firmware** for the ESP32: a timer-driven sampler, a queue to the WiFi
-  sender so slow sends never disturb the sample clock, and optional 2x
-  oversampling with a halfband filter.
-- **A streaming pipeline**: band-pass and mains notch filters that carry
-  their state between packets, 15 features per channel, LDA, and majority
-  voting.
-- **Recalibration** with `adapt()`: one second per gesture from a new day
-  recovers most of what a model loses to drift.
-- **Knowing when it doesn't know**: gesture sets that hold the right
-  gesture a promised share of the time, and keep that promise across days
-  after recalibration ([details](conformal.md)).
-- **Decision policies** that act only when a window is confident enough and
-  otherwise keep the last action, measured in wrong actions per minute
+- Firmware for the ESP32. A timer drives the sampler, and a queue passes
+  packets to the WiFi sender so slow sends do not disturb the sample clock.
+  Optional 2x oversampling uses a halfband filter.
+- A streaming pipeline: band-pass and mains notch filters that keep their
+  state between packets, 15 features per channel, LDA, and majority voting.
+- Recalibration with `adapt()`. One second per gesture from a new day
+  recovers most of the accuracy a model loses to drift.
+- Calibrated gesture sets that contain the correct gesture a chosen share of
+  the time, and keep doing so across days after recalibration
+  ([details](conformal.md)).
+- Decision policies that act only on confident windows and otherwise repeat
+  the last action, evaluated in wrong actions per minute
   ([details](decisions.md)).
-- **A signal-quality monitor** that spots a lifted or clipping electrode
+- A signal-quality monitor that detects a lifted or clipping electrode
   within about a second and switches to a model without it.
-- **Benchmarks** on two public datasets, with splits by recording, day and
-  person, settings chosen on validation data, and every number in the docs
-  checked against the results by the test suite.
+- Benchmarks on two public datasets, split by recording, day and person,
+  with settings chosen on validation data. The test suite checks every
+  number in the docs against the benchmark output.
 
 ```python
 from myobridge import EmgSimulator, GesturePipeline, calibrate
@@ -80,7 +80,7 @@ for prediction in pipeline.process_block(arm.generate(20)):
 
 ## Status
 
-The library, firmware and benchmarks are tested and working. Every accuracy
-number so far comes from public datasets recorded with other hardware; the
-first sessions on the myobridge armband itself are next, following
+The library, firmware and benchmarks are tested. Every accuracy number so
+far comes from public datasets recorded with other hardware. The next step
+is recording with the myobridge armband itself, following
 [the bring-up checklist](hardware-bringup.md).

@@ -1,7 +1,7 @@
 # Build the armband
 
 The armband is four MyoWare muscle sensors read by an ESP32, which streams
-the samples over WiFi. Everything here is off the shelf.
+the samples over WiFi. All of the parts are available off the shelf.
 
 !!! danger "Battery power only"
     Power the ESP32 and the sensors **only from a battery** (a LiPo or a USB
@@ -30,18 +30,20 @@ the samples over WiFi. Everything here is off the shelf.
 | `RAW` | GPIO 32, 33, 34, 35 (channels 0-3) | These are on ADC1, which still works while WiFi is on |
 
 Use the **RAW** output, not ENV. ENV is the sensor's own rectified and
-smoothed envelope: fine for "is the muscle on?", but it throws away the
-frequency content the features use, and the PC can't undo it. RAW is the
-amplified, band-passed signal, centred at half the supply voltage. Check the
-pin labels on your board; the output modes are printed next to the pads.
+smoothed envelope. It is enough to tell whether a muscle is active, but it
+discards the frequency content the features use, and the PC cannot recover
+it. RAW is the amplified, band-passed signal, centred at half the supply
+voltage. Check the pin labels on your board; the output modes are printed
+next to the pads.
 
 ## Placement
 
 Put the four sensors around the thickest part of the forearm, roughly evenly
 spaced, each with its two electrodes along the muscle and the reference
 electrode on a bony spot such as the elbow. The benchmarks use the same
-"four spread evenly" layout on the 3DC armband; on 11 gestures it costs about
-7 points of accuracy against 10 electrodes (92.4% against 85.0%) (see [Results](results.md)).
+layout, four electrodes spread evenly, on the 3DC armband. On 11 gestures it
+scores about 7 points lower than all 10 electrodes (85.0% against 92.4%; see
+[Results](results.md)).
 
 ## Flash the firmware
 
@@ -55,7 +57,8 @@ arduino-cli upload  --fqbn esp32:esp32:esp32 -p /dev/ttyUSB0 firmware/esp32_emg_
 The sketch targets Arduino-ESP32 core 3.x. `config.h` is gitignored, so
 your WiFi password stays on your machine. `OVERSAMPLE 2` samples at 2 kHz
 and filters down to 1 kHz on the ESP32, which should lower the aliased noise
-floor ([Does 1 kHz alias?](aliasing.md)); the computer sees 1 kHz either way.
+floor ([Does 1 kHz alias?](aliasing.md)). The computer receives 1 kHz data
+in both modes.
 
 ## Check it works
 
@@ -65,8 +68,8 @@ Unplug USB, power the board from the battery, and run:
 myobridge listen --port 5005
 ```
 
-You should see four RMS bars that jump when you clench, a healthy status
-for each channel, and packet loss near zero.
+The output should show four RMS bars that rise when you clench, a healthy
+status for each channel, and packet loss near zero.
 [First sessions on hardware](hardware-bringup.md) is the full checklist,
 including how to measure the noise floor and set the quality thresholds for
 your sensors.

@@ -39,14 +39,14 @@ nav:
       - First sessions on hardware: hardware-bringup.md
       - The first recorded session: first-session.md
       - Send gestures to a game: protocol.md
-      - Your own 90% promise: your-promise.md
+      - Calibrating your own sets: your-promise.md
   - How it works:
       - Overview: how-it-works.md
       - Signal quality monitor: signal-quality.md
-      - Knowing when it doesn't know: conformal.md
-      - Acting on it: decisions.md
-      - Acting only when sure: selective.md
-      - Does 1 kHz alias?: aliasing.md
+      - Gesture sets: conformal.md
+      - Decision policies: decisions.md
+      - Selective answers: selective.md
+      - Aliasing at 1 kHz: aliasing.md
   - Results:
       - All experiments: results.md
       - Datasets and splits: datasets.md
