@@ -145,6 +145,7 @@ windows at every switch, but the output a user sees is far steadier.
 
 Every packet carries a 32-bit counter. The receiver stores the next number it
 expects and computes `ahead = (seq − expected) mod 2³²`:
+
 - `0`: on time.
 - small positive: a gap; that many packets were lost.
 - "negative" (≥ 2³¹ after the modulo) by a little (up to 32): a late packet.
@@ -213,78 +214,50 @@ shorter step or a shorter window, and each trades stability for speed.
   loss this has little effect; a link with heavier loss would need
   zero-filling or interpolation.
 
-## Design questions
+## Design decisions
 
-1. **Why UDP and not TCP?**
-   For real-time control, old data has no value. TCP retransmits and holds
-   newer data behind a lost packet (head-of-line blocking), so one loss
-   becomes a freeze. With UDP I drop the packet, count it with sequence
-   numbers, and continue.
+### UDP rather than TCP
 
-2. **How do you know if you're losing packets?**
-   Every packet has a u32 sequence number. Gaps mean drops, numbers behind the
-   expected one mean reordering or duplicates, and a big backwards jump means
-   the device rebooted. All arithmetic is mod 2³², so wraparound is not a
-   special case. The `listen` command shows the live loss %.
+For real-time control, old data has no value. TCP retransmits a lost packet
+and holds newer data behind it (head-of-line blocking), so one loss becomes a
+freeze. With UDP the receiver drops the packet, counts it from the sequence
+numbers, and continues. `listen` shows the live loss rate.
 
-3. **Why sample at 1 kHz? Doesn't that alias?**
-   Given the bandwidth of surface EMG, 1 kHz is the minimum rate. The MyoWare
-   does not filter strongly enough above 500 Hz, so wideband noise there folds
-   into the band. The EMG itself is barely affected, because it has little
-   power above 500 Hz, but the noise floor rises. The firmware can instead
-   sample at 2 kHz and decimate with a halfband FIR, which the model says
-   removes most of that noise. See aliasing.md.
+### Timer, task and queue in the firmware
 
-4. **Why a 20-450 Hz bandpass and a 60 Hz notch?**
-   Below the passband is motion artefact and drift; above it is mostly noise.
-   Mains hum is inside the EMG band, so the bandpass cannot remove it. A
-   narrow notch does, and the tests show that it leaves the passband
-   unchanged (see [Signal chain](#signal-chain)).
+Sampling in `loop()` with `delay()` drifts, and WiFi sends can block for
+milliseconds. A hardware timer gives exact 1 ms ticks. The ISR only notifies a
+high-priority task, because ISRs must be short and `analogRead` is not
+ISR-safe. The queue between sampling and sending means slow WiFi drops whole
+packets, which the PC can count, instead of distorting the sample timing.
 
-5. **What does "streaming filter" mean and how did you test it?**
-   The filter carries its internal state from one packet to the next, so
-   processing in chunks gives the same output as processing all at once. The
-   test filters random data in chunks of several sizes and compares the
-   result to the one-shot output.
+### ADC1 pins and the RAW output
 
-6. **Explain LDA. Why not a neural network?**
-   Gaussian classes with a shared covariance give linear decision boundaries;
-   training is closed-form and prediction is a matrix multiply. With a minute
-   of calibration data per session, a deep model would overfit, and LDA is the
-   standard baseline in the field. It is also small enough to run on the
-   ESP32. I would try a CNN once I have hours of real data across sessions.
+ADC2 is shared with the WiFi radio and cannot be read while WiFi is on, so
+the sensors use ADC1 pins. The MyoWare's RAW output keeps the full EMG
+waveform. Its ENV output is already rectified and smoothed by the sensor,
+which removes the information the frequency features (zero crossings, slope
+sign changes) depend on.
 
-7. **What is the end-to-end latency, and where does it go?**
-   Most of the [latency budget](#latency-budget) comes from the 200 ms window
-   and the majority vote. The network (~5 ms) and the measured computation
-   time contribute little. To reduce it I would shrink the vote or the window
-   step.
+### A CRC on top of UDP's checksum
 
-8. **Why ISR + task + queue in the firmware instead of reading in `loop()`?**
-   The reason is timing. `loop()` with `delay()` drifts, and WiFi sends can
-   block. A hardware timer gives exact 1 ms ticks. The ISR only notifies a
-   high-priority task, because ISRs must be short and `analogRead` is not
-   ISR-safe. A queue decouples sampling from sending, so slow WiFi drops
-   packets visibly instead of distorting timing.
+The UDP checksum is optional in IPv4 and is only a 16-bit ones'-complement
+sum. The packet's own CRC-16 is end to end, under our control and testable,
+and it catches all burst errors up to 16 bits. It costs 2 bytes per 182-byte
+packet.
 
-9. **Why ADC1 pins? Why the RAW output?**
-   ADC2 is shared with the WiFi radio and can't be read while WiFi is on.
-   RAW keeps the full EMG waveform. ENV is already rectified and smoothed by
-   the sensor, which destroys the information the frequency features (zero
-   crossings, slope changes) need, and that cannot be undone.
+### LDA rather than a neural network
 
-10. **Why a CRC when UDP has a checksum?**
-    The UDP checksum is optional in IPv4 and is only a 16-bit ones'-complement
-    sum. Our CRC is end-to-end, defined by us and testable, and it catches all
-    burst errors up to 16 bits. It costs 2 bytes per 182-byte packet.
+LDA is trained in closed form and predicts with one matrix multiply. With
+about a minute of calibration data per session, a deep model would overfit,
+and LDA is the standard baseline in the field. It is also small enough to run
+on the ESP32. A CNN becomes worth trying once there are hours of real
+recordings across sessions.
 
-11. **What's the biggest risk when moving to real hardware?**
-    Signal quality: electrode placement, skin prep, motion artefacts, and the
-    ESP32 ADC's noise. Safety is the other risk. Electrodes on skin must never
-    share a circuit with mains power, so everything runs from a battery.
+### Sending gestures to a headset
 
-12. **How would this get to a Quest?**
-    `myobridge forward` sends a small JSON message per decision over UDP. A
-    Unity script listens on a port, parses it with `JsonUtility`, and keeps the
-    latest gesture. Later the classifier could run on the ESP32 and send only
-    the gesture, or the Quest could receive raw packets directly.
+`myobridge forward` sends one small JSON message per decision over UDP. A
+Unity script on a Quest listens on a port, parses each message with
+`JsonUtility` and keeps the latest gesture ([protocol](protocol.md)). Later
+the classifier could run on the ESP32 and send only the gesture, or the Quest
+could receive raw packets directly.
