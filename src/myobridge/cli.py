@@ -492,6 +492,7 @@ def quality_monitor(
 
 def cmd_sets(args: argparse.Namespace) -> None:
     """Live gesture sets from the armband, recalibrated for today."""
+    from .gating import ConfidenceGate
     from .live_sets import Prompter
     from .sessions import CALIBRATION_WINDOW, load_sets, recalibrate
 
@@ -559,7 +560,10 @@ def cmd_sets(args: argparse.Namespace) -> None:
                 None if args.sim else ESP32_RAIL,
             )
         try:
-            live = LiveSets(sets, n_channels, prompter, monitor, info)
+            # the gate from docs/decisions.md: act on the newest window's top
+            # gesture only when it is likely enough; meanwhile keep the last action
+            policy = None if args.gate is None else ConfidenceGate(args.gate, k=1, latch=True)
+            live = LiveSets(sets, n_channels, prompter, monitor, info, policy)
         except ValueError as err:
             raise CliError(str(err)) from None
         follow = None
@@ -585,6 +589,13 @@ def cmd_sets(args: argparse.Namespace) -> None:
                 f"over {score['windows']} windows; one gesture {pct(score['singleton_rate'], 0)}, "
                 f"right {pct(score['accuracy_when_singleton'], 0)} of those times"
             )
+            if "wrong_per_min" in score:
+                rate = score["wrong_per_min"]
+                print(
+                    f"Gate at {args.gate:g}: acted {pct(score['acting_share'], 0)} of the time, "
+                    f"right {pct(score['right_when_acting'], 0)} of it, "
+                    f"{'-' if rate is None else f'{rate:.1f}'} wrong actions a minute"
+                )
 
 
 # --------------------------------------------------------------------- report
@@ -1012,6 +1023,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-monitor",
         action="store_true",
         help="keep using electrodes the quality monitor flags (to see what that does)",
+    )
+    s.add_argument(
+        "--gate",
+        type=probability,
+        nargs="?",
+        const=0.7,
+        metavar="CUTOFF",
+        help="also show the action an app would take: act only when the top gesture's "
+        "probability is CUTOFF or more (default 0.7), else keep the last action",
     )
     s.add_argument("--duration", type=positive, help="stop after N seconds")
     s.add_argument("--sim", action="store_true", help="use the simulator instead of a device")

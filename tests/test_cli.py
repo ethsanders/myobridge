@@ -420,6 +420,12 @@ def test_sessions_fit_and_prompted_sets(tmp_path, capsys, monkeypatch):
     final = capsys.readouterr().out.splitlines()[-1]
     assert final.startswith("Final: promised 90%, delivered")
 
+    args = ["sets", "--sim", "--model", str(model), "--prompt", "--hold", "3", "--duration", "15"]
+    main([*args, "--gate"])
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[-2].startswith("Final: promised 90%, delivered")
+    assert lines[-1].startswith("Gate at 0.7: acted ") and "wrong actions a minute" in lines[-1]
+
 
 def test_sets_without_fitted_sets_is_an_error(tmp_path, capsys):
     main(["calibrate", "--sim", "--seconds", "2", "--out", str(tmp_path / "m.npz")])

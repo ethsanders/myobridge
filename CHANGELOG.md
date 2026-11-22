@@ -8,6 +8,10 @@ All notable changes to myobridge. The format follows
 
 ### Added
 
+- `myobridge sets --gate [CUTOFF]`: shows the confidence gate's action next to
+  the sets and, with `--prompt`, scores it live: how often it acted, how
+  often it was right, and wrong actions per minute. In code:
+  `LiveSets(policy=...)` and `Score.act`.
 - `myobridge report`: sessions from the armband in, a hardware report out
   (report.md, report.json and figures). Raw traces, the rest noise floor
   in counts, millivolts at the ADC and, with `--gain`, microvolts at the

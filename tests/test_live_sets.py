@@ -3,6 +3,7 @@ import urllib.request
 
 import pytest
 
+from myobridge.gating import ConfidenceGate
 from myobridge.live_sets import LiveSets, Prompter, Score, StateServer, describe
 from myobridge.sessions import Session, fit_sets, recalibrate
 from myobridge.simulator import GESTURES, EmgSimulator
@@ -43,6 +44,57 @@ def test_score_counts():
     assert d["coverage"] == 0.5
     assert d["singleton_rate"] == 0.5
     assert d["accuracy_when_singleton"] == 0.5
+
+
+def test_score_counts_actions_and_runs_of_wrong_ones():
+    s = Score(step_s=0.5)  # 120 windows a minute
+    for w, (action, truth) in enumerate(
+        [("fist", "fist"), (None, "fist"), ("open", "fist"), ("open", "fist"), ("fist", "fist")]
+    ):
+        s.add((truth,), truth)
+        s.act(action, truth, w)
+    s.add(("open",), "open")
+    s.act("fist", "open", 9)  # not next to the last scored window: a new run
+    s.add(("open",), "open")
+    s.act("fist", "open", 10)  # carries on that run
+    d = s.as_dict()
+    assert d["acting_share"] == 6 / 7
+    assert d["right_when_acting"] == 2 / 6
+    # two runs of wrong actions over 7 windows of 0.5 s
+    assert d["wrong_per_min"] == pytest.approx(2 / (7 * 0.5 / 60))
+
+
+def test_a_score_without_a_policy_has_no_action_counts():
+    assert "wrong_per_min" not in Score().as_dict()
+
+
+def test_gated_live_sets_report_the_action(sets):
+    sim = EmgSimulator(seed=31)
+    gate = ConfidenceGate(0.7, k=1, latch=True)
+    live = LiveSets(sets, 4, Prompter(GESTURES, hold_s=3.0, seed=3), policy=gate)
+    actions = set()
+    while live.t < 30.0:
+        sim.set_gesture(live.prompt())
+        state = live.push(sim.generate(20))
+        actions.add(state.get("action"))
+    assert "action" in state and actions - {None} <= set(GESTURES)
+    score = state["score"]
+    assert 0.5 < score["acting_share"] <= 1.0
+    assert 0.75 < score["right_when_acting"] <= 1.0
+    assert score["wrong_per_min"] >= 0
+    line = describe(state)
+    assert "acting: " in line or "holding" in line
+    assert "wrong actions/min" in line
+
+
+def test_ungated_live_sets_have_no_action(sets):
+    state = LiveSets(sets, 4).push(EmgSimulator(seed=1).generate(400))
+    assert "action" not in state
+
+
+@pytest.mark.parametrize(("action", "text"), [("fist", "acting: fist"), (None, "holding")])
+def test_describe_actions(action, text):
+    assert text in describe({"set": ["fist"], "promised": 0.9, "action": action})
 
 
 def test_prompted_live_sets_keep_score(sets):

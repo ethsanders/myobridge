@@ -6,6 +6,12 @@ sure: fist or open") when it isn't. In prompted mode the app asks for one
 gesture at a time and counts, window by window, how often the set held the
 asked-for gesture, next to the promise. That count is the measured number.
 
+With a decision policy (`--gate` on the command line; see
+`myobridge.gating`), the state also carries the policy's action: the
+gesture an application would be told to perform, or a hold. Prompted runs
+then count how often it acted, how often it acted on the right gesture,
+and the wrong actions per minute, the measure in docs/decisions.md.
+
 The view is a line in the terminal and, with `serve()`, a page in the
 browser at http://127.0.0.1:<port>/ in large type, for a screen or a camera.
 """
@@ -23,6 +29,7 @@ import numpy as np
 
 from .classifier import LDAClassifier
 from .conformal import ConformalGestures
+from .gating import DecisionPolicy
 from .pipeline import GesturePipeline, Prediction
 from .quality import QualityMonitor
 
@@ -62,12 +69,22 @@ class Prompter:
 
 @dataclass
 class Score:
-    """Running counts of the scored windows."""
+    """Running counts of the scored windows.
+
+    `add` counts a window's set. `act` counts the decision policy's action
+    for the same window, if there is a policy: `step_s` (seconds between
+    windows) turns the wrong actions into a rate per minute.
+    """
 
     windows: int = 0
     covered: int = 0  # sets that held the asked-for gesture
     singletons: int = 0
     singletons_right: int = 0
+    step_s: float | None = None  # set when a policy acts; seconds per window
+    acted: int = 0  # windows where the policy acted (didn't hold)
+    acted_right: int = 0
+    wrong_runs: int = 0  # runs of the same wrong action, in a row of scored windows
+    _prev: tuple[int, str, str | None] | None = None  # (window, truth, action) last scored
 
     def add(self, gesture_set: Sequence[str], truth: str) -> None:
         self.windows += 1
@@ -76,16 +93,35 @@ class Score:
             self.singletons += 1
             self.singletons_right += gesture_set[0] == truth
 
+    def act(self, action: str | None, truth: str, window: int) -> None:
+        """Count the policy's action (None: hold) for scored window number `window`."""
+        if action is not None:
+            self.acted += 1
+            self.acted_right += action == truth
+            if action != truth:
+                # a wrong action that carries on from the last window is the same run
+                same_run = self._prev == (window - 1, truth, action)
+                self.wrong_runs += not same_run
+        self._prev = (window, truth, action)
+
     def as_dict(self) -> dict[str, Any]:
         def share(a: int, b: int) -> float | None:
             return a / b if b else None
 
-        return {
+        out: dict[str, Any] = {
             "windows": self.windows,
             "coverage": share(self.covered, self.windows),
             "singleton_rate": share(self.singletons, self.windows),
             "accuracy_when_singleton": share(self.singletons_right, self.singletons),
         }
+        if self.step_s is not None:
+            minutes = self.windows * self.step_s / 60
+            out |= {
+                "acting_share": share(self.acted, self.windows),
+                "right_when_acting": share(self.acted_right, self.acted),
+                "wrong_per_min": self.wrong_runs / minutes if minutes else None,
+            }
+        return out
 
 
 class LiveSets:
@@ -97,6 +133,8 @@ class LiveSets:
         n_channels: Channels in the stream.
         prompter: Ask for gestures and score the sets, or None to just show them.
         monitor: Drop broken electrodes, as the live pipeline does.
+        policy: Decide when to act on a gesture (see `myobridge.gating`); the
+            state then carries its `action`, and a prompted score counts it.
     """
 
     def __init__(
@@ -106,16 +144,19 @@ class LiveSets:
         prompter: Prompter | None = None,
         monitor: QualityMonitor | None = None,
         info: dict[str, Any] | None = None,
+        policy: DecisionPolicy | None = None,
     ):
         model = sets.model
         if not isinstance(model, LDAClassifier) or model.settings is None:
             raise ValueError("the sets' model must record how it was trained (use `fit_sets`)")
         self.pipeline = GesturePipeline.from_model(
-            model, n_channels, conformal=sets, monitor=monitor
+            model, n_channels, conformal=sets, monitor=monitor, policy=policy
         )
         self.fs = float(model.settings.fs)
         self.prompter = prompter
-        self.score = Score()
+        self.gated = policy is not None
+        step_s = self.pipeline.windower.step / self.fs
+        self.score = Score(step_s=step_s if self.gated else None)
         self.promised = sets.coverage
         self.info = info or {}
         self.last: Prediction | None = None
@@ -141,6 +182,9 @@ class LiveSets:
                 truth, scored, _ = self.prompter.at(max(start, 0.0))
                 if scored and self.prompter.at(end - 1e-9)[0] == truth:
                     self.score.add(pred.gesture_set, truth)
+                    if self.gated:
+                        window = pred.sample_index // self.pipeline.windower.step
+                        self.score.act(pred.action, truth, window)
         self._state = self._snapshot(self.t)
         return self._state
 
@@ -156,6 +200,8 @@ class LiveSets:
             members = sorted(pred.gesture_set, key=lambda g: g != pred.raw_gesture)
             state |= {"set": members, "top": pred.raw_gesture}
             state["dropped"] = list(pred.dropped_channels)
+            if self.gated:
+                state["action"] = pred.action
         if self.prompter is not None:
             asked, scored, left = self.prompter.at(t)
             state |= {"prompt": asked, "scoring": scored, "left": round(left, 2)}
@@ -181,12 +227,21 @@ def describe(state: dict[str, Any]) -> str:
         parts.append("no gesture fits")
     else:
         parts.append("not sure: " + " or ".join(members))
+    if "action" in state:
+        action = state["action"]
+        parts.append("holding" if action is None else f"acting: {action}")
     if "score" in state:
         s = state["score"]
         parts.append(
             f"promised {pct(state['promised'], 0)}, delivered {pct(s['coverage'])} "
             f"of {s['windows']} windows, one gesture {pct(s['singleton_rate'], 0)}"
         )
+        if "wrong_per_min" in s:
+            rate = s["wrong_per_min"]
+            parts.append(
+                f"acted {pct(s['acting_share'], 0)}, right {pct(s['right_when_acting'], 0)}, "
+                f"{'-' if rate is None else f'{rate:.1f}'} wrong actions/min"
+            )
     if state.get("dropped"):
         parts.append("dropped electrode " + ", ".join(str(c + 1) for c in state["dropped"]))
     return "  |  ".join(parts)
@@ -278,6 +333,8 @@ body { margin:0; background:var(--bg); color:var(--ink);
 #score { font-size: 4vh; color: var(--ink2); display:flex; flex-wrap:wrap; gap: 0 1.2em; }
 #score b { color: var(--ink); font-size: 6vh; }
 #score .short b { color: var(--wrong); }
+#action { font-size: 5vh; font-weight: 600; }
+#action.hold { color: var(--ink2); font-weight: 400; }
 #foot { color: var(--ink2); font-size: 1.8vh; }
 </style>
 </head>
@@ -287,6 +344,7 @@ body { margin:0; background:var(--bg); color:var(--ink);
   <div><span id="prompt"></span><span id="left"></span></div>
 </div>
 <div><div class="label">Decoder's answer</div><div id="set" class="chips"></div></div>
+<div id="act" hidden><div class="label">Acting on</div><div id="action"></div></div>
 <div id="score" hidden></div>
 <div id="foot"></div>
 <script>
@@ -321,6 +379,11 @@ function draw(s) {
     box.replaceChildren(lead, ...set.map((g) =>
       chip(g.replaceAll("_", " "), asking && g === s.prompt ? "hit" : "")));
   }
+  $("act").hidden = !("action" in s);
+  if ("action" in s) {
+    $("action").textContent = s.action == null ? "holding" : s.action.replaceAll("_", " ");
+    $("action").className = s.action == null ? "hold" : "";
+  }
   if (s.score) {
     const sc = s.score;
     const short = sc.coverage != null && sc.coverage < s.promised - 0.05;
@@ -330,7 +393,9 @@ function draw(s) {
       ["Promised", pct(s.promised, 0), ""],
       ["delivered so far", pct(sc.coverage), short ? "short" : ""],
       ["answered with one gesture", pct(sc.singleton_rate, 0), ""],
-    ]) {
+    ].concat("wrong_per_min" in sc ? [
+      ["wrong actions a minute", sc.wrong_per_min == null ? "-" : sc.wrong_per_min.toFixed(1), ""],
+    ] : [])) {
       const span = document.createElement("span");
       span.className = cls;
       span.append(label + " ");
