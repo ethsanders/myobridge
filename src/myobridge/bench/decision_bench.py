@@ -53,7 +53,7 @@ other vote sizes' validation numbers gives the curve.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -488,8 +488,14 @@ def headline_choices(res: Mapping[str, Any], cfgs: Sequence[Config]) -> dict[str
 
 def multiday_groups(
     t: FeatureTable,
-) -> tuple[dict[int, list[Stream]], dict[int, list[Stream]], dict[str, Any]]:
-    """Validation and test days as streams, with the bench conformal recipe."""
+) -> tuple[
+    dict[int, list[Stream]],
+    dict[int, list[Stream]],
+    dict[str, Any],
+    Callable[[int], dict[int, list[Stream]]],
+]:
+    """Validation and test days as streams, with the bench conformal recipe,
+    and a way to stream the test days again in another playback order."""
     days = sorted(set(t.session.tolist()))
     train = [d for d in days if d in mdb.TRAIN_DAYS]
     val = [d for d in days if d in mdb.VAL_DAYS]
@@ -517,10 +523,16 @@ def multiday_groups(
         a: cb._thresholds([scored[d] for d in thresh_days], a, temp, "aps", False, SEED)
         for a in ALPHAS
     }
-    groups = {
-        d: streams_of(adapted[d], t.where(sessions=[d]), temp, th, np.random.default_rng([SEED, d]))
-        for d in val + test
-    }
+
+    def restream(days: Sequence[int], *seed: int) -> dict[int, list[Stream]]:
+        return {
+            d: streams_of(
+                adapted[d], t.where(sessions=[d]), temp, th, np.random.default_rng([SEED, d, *seed])
+            )
+            for d in days
+        }
+
+    groups = restream(val + test)
     info = {
         "adapt_setting": asdict(setting),
         "temperature": temp,
@@ -530,7 +542,68 @@ def multiday_groups(
         "validation_days": val,
         "test_days": test,
     }
-    return {d: groups[d] for d in val}, {d: groups[d] for d in test}, info
+    return (
+        {d: groups[d] for d in val},
+        {d: groups[d] for d in test},
+        info,
+        lambda seed: restream(test, seed),
+    )
+
+
+ORDER_SEEDS = tuple(range(1, 11))  # other playback orders for the headline rows
+
+
+def order_spread(
+    restream: Callable[[int], Mapping[Any, Sequence[Stream]]],
+    picks: Mapping[str, Config],
+    seeds: Sequence[int],
+) -> dict[str, Any]:
+    """The headline rows again on other playback orders of the test groups.
+
+    Each seed redraws the order the holds are played in on every test group
+    (and the APS sets' random share), so this shows how much the headline
+    depends on the one order behind it. Settings are not chosen again.
+    """
+    base_cfg = Config("vote", (("k", 5),))
+    cfgs = {BASELINE: base_cfg, **{c.name: c for c in picks.values()}}
+    rows: dict[str, dict[str, list[float]]] = {
+        n: {"wrong_per_min": [], "time_to_correct_s": [], "correct_share": []} for n in cfgs
+    }
+    diffs: dict[str, dict[str, list[float]]] = {
+        n: {"mean": [], "ci95_low": [], "ci95_high": [], "wins": []} for n in cfgs if n != BASELINE
+    }
+    for seed in seeds:
+        groups = restream(seed)
+        per = {n: evaluate(c, groups) for n, c in cfgs.items()}
+        for n in cfgs:
+            m = mean_over_groups(per[n])
+            rows[n]["wrong_per_min"].append(m[OBJECTIVE])
+            rows[n]["time_to_correct_s"].append(m[SPEED])
+            rows[n]["correct_share"].append(m[COVER])
+            if n == BASELINE:
+                continue
+            d = paired(per[n], per[BASELINE])
+            for k in ("mean", "ci95_low", "ci95_high"):
+                diffs[n][k].append(float(d[OBJECTIVE][k]))
+            diffs[n]["wins"].append(float(verdict(d)["wins"]))
+    return {
+        "seeds": list(seeds),
+        "settings": {
+            n: {
+                "by_order": rows[n],
+                **(
+                    {}
+                    if n == BASELINE
+                    else {
+                        "minus_baseline_by_order": diffs[n],
+                        "wins_on_every_order": bool(all(diffs[n]["wins"])),
+                        "fewer_wrong_on_every_order": bool(max(diffs[n]["ci95_high"]) < 0),
+                    }
+                ),
+            }
+            for n in cfgs
+        },
+    }
 
 
 # ----------------------------------------------------------------- 3DC
@@ -613,12 +686,16 @@ def run(opts: RunOptions) -> dict[str, Any]:
     configs = quick_grid() if opts.quick else grid()
     _, tables = mdb.build_tables(opts, cfg)
     with timed("MultiDay streams"):
-        md_val, md_test, md_info = multiday_groups(tables[cfg.feature_set])
+        md_val, md_test, md_info, md_restream = multiday_groups(tables[cfg.feature_set])
     del tables
     with timed("MultiDay decisions"):
         md = compare(md_val, md_test, configs)
     md_pick = headline_choices(md, configs)
     md["streams"] = md_info
+    with timed("MultiDay playback orders"):
+        seeds = ORDER_SEEDS[:2] if opts.quick else ORDER_SEEDS
+        md["playback_orders"] = order_spread(md_restream, md_pick, seeds)
+    del md_restream
 
     with timed("load 3DC"):
         subjects = [1, 7] if opts.quick else None  # quick: one to choose, one to report

@@ -454,6 +454,17 @@ def test_decision_quick(data, tmp_path):
             "not_less_often_right",
             "wins",
         }
+    # the headline rows again on other playback orders, settings not chosen again
+    orders = md["playback_orders"]
+    assert orders["seeds"] == list(db.ORDER_SEEDS[:2])
+    assert set(orders["settings"]) == {db.BASELINE} | set(filter(None, picks.values())) | {
+        n for n in md["chosen"][f"ttfc_only@{db.BASELINE}"].values() if n
+    }
+    for name, row in orders["settings"].items():
+        assert all(len(v) == 2 for v in row["by_order"].values())
+        if name != db.BASELINE:
+            assert len(row["minus_baseline_by_order"]["mean"]) == 2
+            assert isinstance(row["wins_on_every_order"], bool)
     for part in ("within_sitting", "cross_person"):
         res = out["threedc"][part]
         assert res["report_groups"] == ["7"]
